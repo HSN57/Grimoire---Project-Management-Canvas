@@ -51,7 +51,12 @@ let uiState = {
     routingDragStartMouse: { x: 0, y: 0 },
     routingDragStartOffset: 0,
     routingDragAxis: 'x',
-    routingDragHandleType: 'offset'
+    routingDragHandleType: 'offset',
+    routingDragStartWaypoints: null,
+    routingDragSegmentIndex: 0,
+    routingDragPointsLength: 0,
+    routingDragWpIdx1: -1,
+    routingDragWpIdx2: -1
 };
 
 let canvasContextMenuLocation = { x: 0, y: 0 };
@@ -586,99 +591,121 @@ function renderEdge(edgeData) {
 
         edgesGroup.appendChild(pathEl);
 
-        // Setup Segment Grab Tracks & Handles (whimsical / miro style stable editing)
-        if (points.length >= 4) {
-            const midIdx = Math.floor(points.length / 2) - 1;
-            const pA = points[midIdx];
-            const pB = points[midIdx + 1];
+        // Setup Segment Grab Tracks & Handles (draw.io style dynamic multi-segment editing)
+        const N = points.length;
+        if (N >= 4) {
+            for (let i = 1; i <= N - 3; i++) {
+                const pA = points[i];
+                const pB = points[i + 1];
+                const idx = i;
 
-            if (pA && pB) {
-                const isHoriz = Math.abs(pB.y - pA.y) < 1;
-                const dragAxis = isHoriz ? 'y' : 'x';
-                const cursor = isHoriz ? 'ns-resize' : 'ew-resize';
+                if (pA && pB) {
+                    const isHoriz = Math.abs(pB.y - pA.y) < 1;
+                    const dragAxis = isHoriz ? 'y' : 'x';
+                    const cursor = isHoriz ? 'ns-resize' : 'ew-resize';
 
-                const grabPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                grabPath.setAttribute('d', `M ${pA.x} ${pA.y} L ${pB.x} ${pB.y}`);
-                grabPath.setAttribute('class', 'routing-grab-path');
-                grabPath.setAttribute('stroke-width', '18');
-                grabPath.setAttribute('stroke-linecap', 'round');
-                grabPath.style.cursor = cursor;
+                    const grabPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    grabPath.setAttribute('d', `M ${pA.x} ${pA.y} L ${pB.x} ${pB.y}`);
+                    grabPath.setAttribute('class', 'routing-grab-path');
+                    grabPath.setAttribute('stroke-width', '18');
+                    grabPath.setAttribute('stroke-linecap', 'round');
+                    grabPath.style.cursor = cursor;
 
-                grabPath.addEventListener('mouseenter', () => {
-                    pathEl.classList.add('hovered', 'flowing');
-                });
-                grabPath.addEventListener('mouseleave', () => {
-                    pathEl.classList.remove('hovered');
-                    if (!isSelected) pathEl.classList.remove('flowing');
-                });
-
-                grabPath.addEventListener('mousedown', (e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-
-                    uiState.selectedNodeIds.clear();
-                    uiState.selectedEdgeId = edgeData.id;
-                    
-                    uiState.isDraggingRoutingHandle = true;
-                    uiState.draggedEdgeId = edgeData.id;
-                    uiState.routingDragStartMouse = { x: e.clientX, y: e.clientY };
-                    uiState.routingDragStartOffset = edgeData.routingOffset || 0;
-                    uiState.routingDragAxis = dragAxis;
-                    uiState.routingDragHandleType = 'offset';
-
-                    renderAll();
-                    updateSidebarUI();
-                });
-
-                edgesGroup.appendChild(grabPath);
-
-                // Gold handle at midpoint (shown when selected)
-                if (isSelected) {
-                    const midX = (pA.x + pB.x) / 2;
-                    const midY = (pA.y + pB.y) / 2;
-
-                    const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                    handle.setAttribute('cx', midX);
-                    handle.setAttribute('cy', midY);
-                    handle.setAttribute('r', '8');
-                    handle.setAttribute('class', 'routing-handle');
-                    handle.style.cursor = cursor;
-
-                    handle.addEventListener('mouseenter', () => {
-                        pathEl.classList.add('hovered');
+                    grabPath.addEventListener('mouseenter', () => {
+                        pathEl.classList.add('hovered', 'flowing');
                     });
-                    handle.addEventListener('mouseleave', () => {
+                    grabPath.addEventListener('mouseleave', () => {
                         pathEl.classList.remove('hovered');
+                        if (!isSelected) pathEl.classList.remove('flowing');
                     });
 
-                    handle.addEventListener('mousedown', (e) => {
+                    grabPath.addEventListener('mousedown', (e) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        
+
                         uiState.selectedNodeIds.clear();
                         uiState.selectedEdgeId = edgeData.id;
-
+                        
                         uiState.isDraggingRoutingHandle = true;
                         uiState.draggedEdgeId = edgeData.id;
                         uiState.routingDragStartMouse = { x: e.clientX, y: e.clientY };
-                        uiState.routingDragStartOffset = edgeData.routingOffset || 0;
+                        
+                        let currentWps = edgeData.waypoints;
+                        if (!currentWps || currentWps.length === 0) {
+                            currentWps = getEdgeWaypoints(edgeData, sPort, tPort);
+                            edgeData.waypoints = currentWps;
+                        }
+                        uiState.routingDragStartWaypoints = JSON.parse(JSON.stringify(currentWps));
+                        uiState.routingDragSegmentIndex = idx;
+                        uiState.routingDragPointsLength = N;
                         uiState.routingDragAxis = dragAxis;
-                        uiState.routingDragHandleType = 'offset';
+                        uiState.routingDragWpIdx1 = idx - 2;
+                        uiState.routingDragWpIdx2 = idx - 1;
 
                         renderAll();
                         updateSidebarUI();
                     });
 
-                    handle.addEventListener('dblclick', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        edgeData.routingOffset = 0;
-                        saveState();
-                        renderAll();
-                        showToast("Routing segment reset to default.", "success");
-                    });
+                    edgesGroup.appendChild(grabPath);
 
-                    edgesGroup.appendChild(handle);
+                    // Gold handle at midpoint (shown when selected)
+                    if (isSelected) {
+                        const midX = (pA.x + pB.x) / 2;
+                        const midY = (pA.y + pB.y) / 2;
+
+                        const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                        handle.setAttribute('cx', midX);
+                        handle.setAttribute('cy', midY);
+                        handle.setAttribute('r', '8');
+                        handle.setAttribute('class', 'routing-handle');
+                        handle.style.cursor = cursor;
+
+                        handle.addEventListener('mouseenter', () => {
+                            pathEl.classList.add('hovered');
+                        });
+                        handle.addEventListener('mouseleave', () => {
+                            pathEl.classList.remove('hovered');
+                        });
+
+                        handle.addEventListener('mousedown', (e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            
+                            uiState.selectedNodeIds.clear();
+                            uiState.selectedEdgeId = edgeData.id;
+
+                            uiState.isDraggingRoutingHandle = true;
+                            uiState.draggedEdgeId = edgeData.id;
+                            uiState.routingDragStartMouse = { x: e.clientX, y: e.clientY };
+                            
+                            let currentWps = edgeData.waypoints;
+                            if (!currentWps || currentWps.length === 0) {
+                                currentWps = getEdgeWaypoints(edgeData, sPort, tPort);
+                                edgeData.waypoints = currentWps;
+                            }
+                            uiState.routingDragStartWaypoints = JSON.parse(JSON.stringify(currentWps));
+                            uiState.routingDragSegmentIndex = idx;
+                            uiState.routingDragPointsLength = N;
+                            uiState.routingDragAxis = dragAxis;
+                            uiState.routingDragWpIdx1 = idx - 2;
+                            uiState.routingDragWpIdx2 = idx - 1;
+
+                            renderAll();
+                            updateSidebarUI();
+                        });
+
+                        handle.addEventListener('dblclick', (e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            edgeData.waypoints = null;
+                            edgeData.routingOffset = 0;
+                            saveState();
+                            renderAll();
+                            showToast("Routing reset to default.", "success");
+                        });
+
+                        edgesGroup.appendChild(handle);
+                    }
                 }
             }
         }
@@ -932,39 +959,47 @@ function orthogonalizePoints(points, p1Dir) {
 }
 
 
+function getEdgeWaypoints(edgeData, sPort, tPort) {
+    if (edgeData && edgeData.waypoints && edgeData.waypoints.length > 0) {
+        return edgeData.waypoints;
+    }
+    const buffer = 30;
+    const p1_exit = { x: sPort.x + sPort.dir.x * buffer, y: sPort.y + sPort.dir.y * buffer };
+    const p2_enter = { x: tPort.x + tPort.dir.x * buffer, y: tPort.y + tPort.dir.y * buffer };
+
+    let waypoints = [];
+    const offset = (edgeData && edgeData.routingOffset) || 0;
+    if (sPort.dir.x !== 0) {
+        if (tPort.dir.x !== 0) {
+            const midX = (p1_exit.x + p2_enter.x) / 2 + offset;
+            waypoints.push({ x: midX, y: p1_exit.y });
+            waypoints.push({ x: midX, y: p2_enter.y });
+        } else {
+            const midX = p2_enter.x + offset;
+            waypoints.push({ x: midX, y: p1_exit.y });
+            waypoints.push({ x: midX, y: p2_enter.y });
+        }
+    } else {
+        if (tPort.dir.y !== 0) {
+            const midY = (p1_exit.y + p2_enter.y) / 2 + offset;
+            waypoints.push({ x: p1_exit.x, y: midY });
+            waypoints.push({ x: p2_enter.x, y: midY });
+        } else {
+            const midY = p2_enter.y + offset;
+            waypoints.push({ x: p1_exit.x, y: midY });
+            waypoints.push({ x: p2_enter.x, y: midY });
+        }
+    }
+    return waypoints;
+}
+
 function getOrthogonalPoints(p1, p2, edgeData) {
     const buffer = 30;
     const p1_exit = { x: p1.x + p1.dir.x * buffer, y: p1.y + p1.dir.y * buffer };
     const p2_enter = { x: p2.x + p2.dir.x * buffer, y: p2.y + p2.dir.y * buffer };
 
-    let points = [p1, p1_exit];
-
-    const offset = (edgeData && edgeData.routingOffset) || 0;
-
-    if (p1.dir.x !== 0) {
-        if (p2.dir.x !== 0) {
-            const midX = (p1_exit.x + p2_enter.x) / 2 + offset;
-            points.push({ x: midX, y: p1_exit.y });
-            points.push({ x: midX, y: p2_enter.y });
-        } else {
-            const midX = p2_enter.x + offset;
-            points.push({ x: midX, y: p1_exit.y });
-            points.push({ x: midX, y: p2_enter.y });
-        }
-    } else {
-        if (p2.dir.y !== 0) {
-            const midY = (p1_exit.y + p2_enter.y) / 2 + offset;
-            points.push({ x: p1_exit.x, y: midY });
-            points.push({ x: p2_enter.x, y: midY });
-        } else {
-            const midY = p2_enter.y + offset;
-            points.push({ x: p1_exit.x, y: midY });
-            points.push({ x: p2_enter.x, y: midY });
-        }
-    }
-
-    points.push(p2_enter);
-    points.push(p2);
+    const waypoints = getEdgeWaypoints(edgeData, p1, p2);
+    let points = [p1, p1_exit, ...waypoints, p2_enter, p2];
     
     return orthogonalizePoints(points, p1.dir);
 }
@@ -1334,21 +1369,34 @@ function setupEventListeners() {
             }
         } else if (uiState.isDraggingRoutingHandle) {
             const edge = state.edges.find(ed => ed.id === uiState.draggedEdgeId);
-            if (edge) {
+            if (edge && uiState.routingDragStartWaypoints) {
                 const dx = (e.clientX - uiState.routingDragStartMouse.x) / uiState.zoom;
                 const dy = (e.clientY - uiState.routingDragStartMouse.y) / uiState.zoom;
-                const delta = uiState.routingDragAxis === 'x' ? dx : dy;
-                let newVal = uiState.routingDragStartOffset + delta;
+                let delta = uiState.routingDragAxis === 'x' ? dx : dy;
 
                 // Clamp to Grid Snapping with Double the Resolution
                 const page = state.pages.find(p => p.id === uiState.activePageId);
                 if (page && page.settings && page.settings.snapToGrid) {
                     const gridSize = page.settings.gridSize || 40;
                     const snapRes = gridSize / 2; // Snapping with double the resolution (half the grid size)
-                    newVal = Math.round(newVal / snapRes) * snapRes;
+                    delta = Math.round(delta / snapRes) * snapRes;
                 }
 
-                edge.routingOffset = newVal;
+                // Clone start waypoints
+                let wps = JSON.parse(JSON.stringify(uiState.routingDragStartWaypoints));
+                const axis = uiState.routingDragAxis;
+
+                const wpIdx1 = uiState.routingDragWpIdx1;
+                const wpIdx2 = uiState.routingDragWpIdx2;
+
+                if (wpIdx1 >= 0 && wps[wpIdx1]) {
+                    wps[wpIdx1][axis] += delta;
+                }
+                if (wpIdx2 >= 0 && wps[wpIdx2]) {
+                    wps[wpIdx2][axis] += delta;
+                }
+
+                edge.waypoints = wps;
                 renderAll();
             }
         } else if (uiState.isDraggingNode) {
