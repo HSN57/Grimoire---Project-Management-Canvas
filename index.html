@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Journey's End - Project Management</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Sidebar Toggles -->
+    
+    <!-- Sidebar Toggles -->
+    <button id="toggle-sidebar-left" class="glass-btn toggle-btn" style="left: 20px; top: 20px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
+    <button id="toggle-sidebar-right" class="glass-btn toggle-btn" style="right: 20px; top: 20px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+    </button>
+
+    <!-- Sidebar for Draggable Templates -->
+    <aside id="sidebar" class="glass-panel">
+        <h2 class="sidebar-title">Grimoire</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="font-size: 14px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 1px;">Pages</h3>
+            <button id="btn-add-page" class="icon-btn" style="width: 24px; height: 24px; font-size: 16px; border: 1px solid var(--color-surface-border); border-radius: 4px;">+</button>
+        </div>
+
+        <div id="pages-list" style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 4px;">
+            <!-- Pages rendered dynamically -->
+        </div>
+        <div class="sidebar-footer" style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;">
+            <button id="export-page" class="outline-btn" style="width: 100%; padding: 8px; font-size: 12px; margin-top: 0;">Export Page (.txt)</button>
+            <button id="clear-data" class="text-btn">Clear Page</button>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <button id="theme-toggle" class="outline-btn" style="flex: 1; padding: 8px; display: flex; justify-content: center; align-items: center;" title="Toggle Theme">
+                    <svg id="icon-sun" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                    <svg id="icon-moon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                </button>
+                <button id="settings-toggle" class="outline-btn" style="flex: 1; padding: 8px; display: flex; justify-content: center; align-items: center;" title="Settings">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main id="workspace">
+        <div id="breadcrumb-container" class="glass-panel">
+            <button id="bc-home" class="bc-item active">Home</button>
+            <div id="bc-trail" style="display:flex; gap:10px; align-items:center;"></div>
+        </div>
+        
+        <div id="zoom-controls" class="glass-panel">
+            <button id="zoom-in" class="icon-btn">+</button>
+            <button id="zoom-reset" class="text-btn">100%</button>
+            <button id="zoom-out" class="icon-btn">-</button>
+        </div>
+        
+        <div id="minimap-container" class="glass-panel">
+            <div id="minimap-content"></div>
+            <div id="minimap-viewport"></div>
+        </div>
+
+        <!-- SVG Canvas for Arrows -->
+        <svg id="edges-canvas">
+            <defs>
+                <marker id="arrowhead-gold" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="var(--color-accent-gold)" /></marker>
+                <marker id="arrowstart-gold" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="2" refY="5" orient="auto"><polygon points="14 0, 0 5, 14 10" fill="var(--color-accent-gold)" /></marker>
+                
+                <marker id="arrowhead-blue" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="var(--color-accent-blue)" /></marker>
+                <marker id="arrowstart-blue" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="2" refY="5" orient="auto"><polygon points="14 0, 0 5, 14 10" fill="var(--color-accent-blue)" /></marker>
+                
+                <marker id="arrowhead-green" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="var(--color-accent-green)" /></marker>
+                <marker id="arrowstart-green" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="2" refY="5" orient="auto"><polygon points="14 0, 0 5, 14 10" fill="var(--color-accent-green)" /></marker>
+                
+                <marker id="arrowhead-danger" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="var(--color-danger)" /></marker>
+                <marker id="arrowstart-danger" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="2" refY="5" orient="auto"><polygon points="14 0, 0 5, 14 10" fill="var(--color-danger)" /></marker>
+                
+                <marker id="arrowhead-purple" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="var(--color-accent-purple)" /></marker>
+                <marker id="arrowstart-purple" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="2" refY="5" orient="auto"><polygon points="14 0, 0 5, 14 10" fill="var(--color-accent-purple)" /></marker>
+                
+                <marker id="arrowhead-slate" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="var(--color-accent-slate)" /></marker>
+                <marker id="arrowstart-slate" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="2" refY="5" orient="auto"><polygon points="14 0, 0 5, 14 10" fill="var(--color-accent-slate)" /></marker>
+
+                <marker id="arrowhead-drawing" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto">
+                    <polygon points="0 0, 14 5, 0 10" fill="var(--color-accent-blue)" />
+                </marker>
+            </defs>
+            <g id="edges-group"></g>
+            <path id="drawing-edge" class="drawing-edge" d="" style="display: none;"></path>
+        </svg>
+
+        <!-- Container for HTML Nodes (Bubbles) -->
+        <div id="nodes-container"></div>
+        
+        <!-- Container for Edge Labels -->
+        <div id="labels-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; z-index: 30; pointer-events: none;"></div>
+        
+        <!-- Selection Box for grouping -->
+        <div id="selection-box" style="display: none;"></div>
+    </main>
+
+    <!-- Context Menu (Right Click) -->
+    <div id="context-menu" class="glass-menu" style="display: none;">
+        <button id="cm-add-task">Add Task Bubble</button>
+        <button id="cm-add-info">Add Info Bubble</button>
+        <button id="cm-add-container">Add Container Bubble</button>
+        <button id="cm-group">Group Selected</button>
+        <button id="cm-ungroup">Ungroup Bubble</button>
+        <button id="cm-copy">Copy</button>
+        <button id="cm-paste">Paste</button>
+        <button id="cm-delete" class="danger">Delete</button>
+    </div>
+
+    <!-- Details Sidebar (Right) -->
+    <aside id="details-sidebar" class="glass-panel">
+        <div class="sidebar-header">
+            <div style="display: flex; align-items: center;">
+                <input type="checkbox" id="ds-completed-checkbox" style="display:none; margin-right:10px; width:18px; height:18px; cursor:pointer;">
+                <h2 id="ds-title" contenteditable="true" placeholder="Enter title..." style="flex-grow: 1;">Node Title</h2>
+            </div>
+            <div id="ds-alignment-controls" style="display: flex; gap: 4px; margin-top: 8px;">
+                <button class="icon-btn align-btn" data-align="left" style="width: 24px; height: 24px;" title="Align Left">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="15" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+                <button class="icon-btn align-btn" data-align="center" style="width: 24px; height: 24px;" title="Align Center">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+                <button class="icon-btn align-btn" data-align="right" style="width: 24px; height: 24px;" title="Align Right">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="9" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+            </div>
+            <p id="ds-status" style="font-size: 12px; color: var(--color-text-muted); margin-top:4px;">No node selected</p>
+        </div>
+        <div class="fp-content" id="ds-node-details">
+            <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Color Theme</h3>
+            <div id="ds-node-color-palette" style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; margin-bottom: 16px;">
+                <button class="color-btn" data-color="gold" style="background: var(--color-accent-gold);" title="Gold"></button>
+                <button class="color-btn" data-color="blue" style="background: var(--color-accent-blue);" title="Blue"></button>
+                <button class="color-btn" data-color="green" style="background: var(--color-accent-green);" title="Green"></button>
+                <button class="color-btn" data-color="danger" style="background: var(--color-danger);" title="Red"></button>
+                <button class="color-btn" data-color="purple" style="background: var(--color-accent-purple);" title="Purple"></button>
+                <button class="color-btn" data-color="slate" style="background: var(--color-accent-slate);" title="Slate"></button>
+            </div>
+
+            <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Description</h3>
+            <textarea id="ds-description" placeholder="Add notes..."></textarea>
+            
+            <div id="ds-nested-section">
+                <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Tasks</h3>
+                <div id="ds-nested-tasks-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;"></div>
+                <button id="ds-add-nested-task" class="outline-btn" style="margin-top: 8px; width: 100%;">+ Add Task</button>
+
+                <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Info</h3>
+                <div id="ds-nested-info-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;"></div>
+                <button id="ds-add-nested-info" class="outline-btn" style="margin-top: 8px; width: 100%;">+ Add Info</button>
+            </div>
+        </div>
+        
+        <div class="fp-content" id="ds-edge-settings" style="display: none;">
+            <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 12px;">Line Settings</h3>
+            
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 13px; display: block; margin-bottom: 4px;">Line Style</label>
+                <select id="es-line-style" style="width: 100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none;">
+                    <option value="solid">Solid</option>
+                    <option value="dashed">Dashed</option>
+                    <option value="dotted">Dotted</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 13px; display: block; margin-bottom: 4px;">Arrows</label>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;">
+                        <input type="checkbox" id="es-arrow-start"> Start
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;">
+                        <input type="checkbox" id="es-arrow-end" checked> End
+                    </label>
+                </div>
+            </div>
+
+            <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Color Theme</h3>
+            <div id="ds-edge-color-palette" style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+                <button class="color-btn" data-color="gold" style="background: var(--color-accent-gold);" title="Gold"></button>
+                <button class="color-btn" data-color="blue" style="background: var(--color-accent-blue);" title="Blue"></button>
+                <button class="color-btn" data-color="green" style="background: var(--color-accent-green);" title="Green"></button>
+                <button class="color-btn" data-color="danger" style="background: var(--color-danger);" title="Red"></button>
+                <button class="color-btn" data-color="purple" style="background: var(--color-accent-purple);" title="Purple"></button>
+                <button class="color-btn" data-color="slate" style="background: var(--color-accent-slate);" title="Slate"></button>
+            </div>
+        </div>
+
+        <div class="fp-content" id="ds-page-settings" style="display: none;">
+            <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase; margin-bottom: 12px;">Page Settings</h3>
+            
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 13px; display: block; margin-bottom: 4px;">Subtasks Per Row</label>
+                <input type="number" id="ps-subtasks-row" min="1" max="10" value="1" style="width: 100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none;">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 13px; display: block; margin-bottom: 4px;">Default Alignment</label>
+                <select id="ps-default-align" style="width: 100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none;">
+                    <option value="left">Left</option>
+                    <option value="center" selected>Center</option>
+                    <option value="right">Right</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 13px; display: block; margin-bottom: 4px;">Grid Size (px)</label>
+                <input type="number" id="ps-grid-size" min="10" max="200" step="10" value="40" style="width: 100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none;">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+                    <input type="checkbox" id="ps-snap-toggle" style="width:16px; height:16px; cursor:pointer;"> Snap to Grid
+                </label>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="glass-panel" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; z-index: 3000; border-radius: 16px; padding: 24px; flex-direction: column;">
+        <div class="settings-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="font-family: var(--font-serif); font-size: 22px; color: var(--color-accent-gold);">Settings</h2>
+            <button id="close-settings" class="icon-btn">×</button>
+        </div>
+        <div class="settings-tabs" style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--color-surface-border); padding-bottom: 8px;">
+            <button class="settings-tab active" data-target="st-colors" style="background: none; border: none; color: var(--color-text-main); font-family: inherit; font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 4px;">Colors</button>
+            <button class="settings-tab" data-target="st-database" style="background: none; border: none; color: var(--color-text-muted); font-family: inherit; font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 4px;">Database</button>
+        </div>
+        <div class="settings-content" style="flex-grow: 1;">
+            <div id="st-colors" class="settings-pane active">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
+                    <select id="sc-mode-select" style="padding: 6px; border-radius: 4px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit;">
+                        <option value="light">Light Mode</option>
+                        <option value="dark">Dark Mode</option>
+                    </select>
+                    <button id="sc-reset" class="text-btn" style="width:auto; color:var(--color-danger);">Reset Colors</button>
+                </div>
+                <div id="sc-inputs" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-height: 300px; overflow-y: auto; padding-right: 8px;">
+                    <!-- Color inputs will be injected here via JS -->
+                </div>
+            </div>
+            <div id="st-database" class="settings-pane">
+                <h3 style="font-size: 14px; margin-bottom: 12px; font-weight: 500;">Workspace Data</h3>
+                <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 20px; line-height: 1.4;">Data is saved automatically in your browser's local storage. You can export it to a file for backup or sharing, or import an existing file.</p>
+                <button id="db-export" class="outline-btn" style="width: 100%; margin-top: 0; margin-bottom: 12px;">Export Workspace (.json)</button>
+                <button id="db-import-btn" class="outline-btn" style="width: 100%; margin-top: 0;">Import Workspace (.json)</button>
+                <input type="file" id="db-import-file" accept=".json" style="display: none;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Backdrop -->
+    <div id="settings-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.3); backdrop-filter: blur(4px); z-index: 2999;"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
