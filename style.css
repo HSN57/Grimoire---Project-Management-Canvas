@@ -218,9 +218,10 @@ body {
     pointer-events: stroke;
 }
 
-.edge-path:hover {
+.edge-path:hover,
+.edge-path.hovered {
     stroke-width: 5;
-    stroke: var(--edge-color, var(--color-accent-blue));
+    stroke: var(--edge-color, var(--color-accent-blue)) !important;
     cursor: pointer;
 }
 
@@ -228,6 +229,8 @@ body {
     stroke: var(--color-accent-blue) !important;
     stroke-width: 5;
 }
+
+
 
 .edge-label {
     position: absolute;
@@ -470,6 +473,35 @@ body {
 
 .edge-handle.dragging {
     cursor: grabbing;
+}
+
+.routing-handle {
+    cursor: grab;
+    transition: r 0.2s, fill 0.2s;
+    fill: var(--color-accent-gold);
+    stroke: #ffffff;
+    stroke-width: 2;
+    pointer-events: all;
+}
+
+.routing-handle:hover {
+    r: 10;
+    fill: var(--color-accent-gold);
+    filter: drop-shadow(0 0 4px var(--color-accent-gold));
+}
+
+.routing-handle:active {
+    cursor: grabbing;
+}
+
+.routing-grab-path {
+    fill: none;
+    stroke: transparent;
+    transition: stroke 0.2s;
+}
+
+.routing-grab-path:hover {
+    stroke: rgba(255, 215, 0, 0.45) !important;
 }
 
 /* Sub-nodes indicator in main bubble */
@@ -911,4 +943,65 @@ select option {
     padding-left: 8px;
     color: var(--color-text-muted);
     margin-bottom: 8px;
+}
+
+/* Custom Modal & Toast Styling */
+.toast-notification {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    border-radius: 12px;
+    background: rgba(20, 20, 20, 0.7);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    border: 1px solid var(--color-surface-border);
+    color: var(--color-text-main);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 250px;
+    max-width: 320px;
+    transform: translateX(120%);
+    transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s;
+    opacity: 0;
+}
+
+.toast-notification.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.toast-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(255, 215, 0, 0.15);
+    color: var(--color-accent-gold);
+}
+
+.toast-icon.success {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+}
+
+.toast-icon.danger {
+    background: rgba(231, 76, 60, 0.15);
+    color: var(--color-danger);
+}
+
+/* Flow Animation for connection edges */
+@keyframes edgeFlow {
+    to {
+        stroke-dashoffset: -28;
+    }
+}
+
+.edge-path.flowing {
+    stroke-dasharray: 8, 6;
+    animation: edgeFlow 1.2s linear infinite !important;
 }

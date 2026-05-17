@@ -46,7 +46,12 @@ let uiState = {
     draggedEdgeId: null,
     draggedEdgeType: null,
     isDraggingLabel: false,
-    draggedLabelId: null
+    draggedLabelId: null,
+    isDraggingRoutingHandle: false,
+    routingDragStartMouse: { x: 0, y: 0 },
+    routingDragStartOffset: 0,
+    routingDragAxis: 'x',
+    routingDragHandleType: 'offset'
 };
 
 let canvasContextMenuLocation = { x: 0, y: 0 };
@@ -77,6 +82,7 @@ function init() {
     historyIndex = 0;
     applyTheme(state.theme);
     renderPagesList();
+    renderTemplatesList();
     renderBreadcrumbs();
     renderAll();
     setupEventListeners();
@@ -116,7 +122,9 @@ function loadState() {
             if (parsed.pages && parsed.pages.length > 0) {
                 state.pages = parsed.pages.map(p => {
                     if (!p.settings) {
-                        p.settings = { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false };
+                        p.settings = { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, routingMode: 'bezier' };
+                    } else if (!p.settings.routingMode) {
+                        p.settings.routingMode = 'bezier';
                     }
                     return p;
                 });
@@ -124,7 +132,7 @@ function loadState() {
                 state.pages = [{ 
                     id: 'default-page', 
                     title: 'Main Workspace',
-                    settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false }
+                    settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, routingMode: 'bezier' }
                 }];
             }
             
@@ -152,7 +160,7 @@ function setupDefaultState() {
     state.pages = [{ 
         id: 'default-page', 
         title: 'Main Workspace',
-        settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false }
+        settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, routingMode: 'bezier' }
     }];
     state.templates = [];
     state.settings = { customColors: { light: {}, dark: {} } };
@@ -278,7 +286,7 @@ document.getElementById('btn-add-page').addEventListener('click', () => {
     const newPage = { 
         id: generateId(), 
         title: 'New Page',
-        settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false }
+        settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, routingMode: 'bezier' }
     };
     state.pages.push(newPage);
     switchPage(newPage.id);
@@ -510,109 +518,301 @@ function renderEdge(edgeData) {
         if (sPort.isAuto) sPort = getPortCenter(edgeData.source, isLeftToRight ? 'right' : 'left');
         if (tPort.isAuto) tPort = getPortCenter(edgeData.target, isLeftToRight ? 'left' : 'right');
     }
-    
-    const path = createSVGPath(sPort, tPort);
-    
-    const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    pathEl.setAttribute('d', path);
-    pathEl.setAttribute('class', 'edge-path');
-    if (uiState.selectedEdgeId === edgeData.id) {
-        pathEl.classList.add('selected');
-    }
-    
+
     const lineStyleStr = edgeData.lineStyle === 'dashed' ? '5,5' : edgeData.lineStyle === 'dotted' ? '2,4' : 'none';
     const colorVar = edgeData.color ? `var(--color-accent-${edgeData.color})` : 'var(--color-accent-gold)';
     const colorName = edgeData.color || 'gold';
-    
-    pathEl.setAttribute('stroke-dasharray', lineStyleStr);
-    pathEl.style.setProperty('--edge-color', colorVar);
 
-    if (edgeData.arrowEnd !== false) {
-        pathEl.setAttribute('marker-end', `url(#arrowhead-${colorName})`);
-    } else {
-        pathEl.removeAttribute('marker-end');
-    }
-    
-    if (edgeData.arrowStart) {
-        pathEl.setAttribute('marker-start', `url(#arrowstart-${colorName})`);
-    } else {
-        pathEl.removeAttribute('marker-start');
-    }
+    const page = state.pages.find(p => p.id === uiState.activePageId);
+    const defaultRouting = (page && page.settings && page.settings.routingMode) || 'bezier';
+    const edgeRouting = edgeData.routingMode;
+    const activeMode = (edgeRouting && edgeRouting !== 'default') ? edgeRouting : defaultRouting;
 
-    pathEl.id = `edge-${edgeData.id}`;
-    
-    pathEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (uiState.selectedEdgeId !== edgeData.id) {
+    const isSelected = uiState.selectedEdgeId === edgeData.id;
+
+    // ── ORTHOGONAL: single path with middle routing grab-handle ──────────────────────────
+    if (activeMode === 'orthogonal') {
+        const points = getOrthogonalPoints(sPort, tPort, edgeData);
+        const path = createSVGPath(sPort, tPort, edgeData);
+
+        const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathEl.setAttribute('d', path);
+        pathEl.setAttribute('class', 'edge-path' + (isSelected ? ' selected flowing' : ''));
+        pathEl.setAttribute('stroke-dasharray', lineStyleStr);
+        pathEl.style.setProperty('--edge-color', colorVar);
+        pathEl.id = `edge-${edgeData.id}`;
+
+        pathEl.addEventListener('mouseenter', () => {
+            pathEl.classList.add('flowing');
+        });
+        pathEl.addEventListener('mouseleave', () => {
+            if (!isSelected) pathEl.classList.remove('flowing');
+        });
+
+        if (edgeData.arrowEnd !== false) {
+            pathEl.setAttribute('marker-end', `url(#arrowhead-${colorName})`);
+        }
+        if (edgeData.arrowStart) {
+            pathEl.setAttribute('marker-start', `url(#arrowstart-${colorName})`);
+        }
+
+        pathEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!isSelected) {
+                uiState.selectedNodeIds.clear();
+                uiState.selectedEdgeId = edgeData.id;
+                renderAll();
+                updateSidebarUI();
+            }
+        });
+
+        pathEl.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
             uiState.selectedNodeIds.clear();
             uiState.selectedEdgeId = edgeData.id;
             renderAll();
             updateSidebarUI();
+            const label = document.getElementById(`edge-label-${edgeData.id}`);
+            if (label) {
+                label.contentEditable = true;
+                label.focus();
+                document.execCommand('selectAll', false, null);
+            }
+        });
+
+        pathEl.addEventListener('contextmenu', (e) => {
+            showEdgeContextMenu(e, edgeData.id);
+        });
+
+        edgesGroup.appendChild(pathEl);
+
+        // Setup Segment Grab Tracks & Handles (whimsical / miro style stable editing)
+        if (points.length >= 4) {
+            const midIdx = Math.floor(points.length / 2) - 1;
+            const pA = points[midIdx];
+            const pB = points[midIdx + 1];
+
+            if (pA && pB) {
+                const isHoriz = Math.abs(pB.y - pA.y) < 1;
+                const dragAxis = isHoriz ? 'y' : 'x';
+                const cursor = isHoriz ? 'ns-resize' : 'ew-resize';
+
+                const grabPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                grabPath.setAttribute('d', `M ${pA.x} ${pA.y} L ${pB.x} ${pB.y}`);
+                grabPath.setAttribute('class', 'routing-grab-path');
+                grabPath.setAttribute('stroke-width', '18');
+                grabPath.setAttribute('stroke-linecap', 'round');
+                grabPath.style.cursor = cursor;
+
+                grabPath.addEventListener('mouseenter', () => {
+                    pathEl.classList.add('hovered', 'flowing');
+                });
+                grabPath.addEventListener('mouseleave', () => {
+                    pathEl.classList.remove('hovered');
+                    if (!isSelected) pathEl.classList.remove('flowing');
+                });
+
+                grabPath.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+
+                    uiState.selectedNodeIds.clear();
+                    uiState.selectedEdgeId = edgeData.id;
+                    
+                    uiState.isDraggingRoutingHandle = true;
+                    uiState.draggedEdgeId = edgeData.id;
+                    uiState.routingDragStartMouse = { x: e.clientX, y: e.clientY };
+                    uiState.routingDragStartOffset = edgeData.routingOffset || 0;
+                    uiState.routingDragAxis = dragAxis;
+                    uiState.routingDragHandleType = 'offset';
+
+                    renderAll();
+                    updateSidebarUI();
+                });
+
+                edgesGroup.appendChild(grabPath);
+
+                // Gold handle at midpoint (shown when selected)
+                if (isSelected) {
+                    const midX = (pA.x + pB.x) / 2;
+                    const midY = (pA.y + pB.y) / 2;
+
+                    const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    handle.setAttribute('cx', midX);
+                    handle.setAttribute('cy', midY);
+                    handle.setAttribute('r', '8');
+                    handle.setAttribute('class', 'routing-handle');
+                    handle.style.cursor = cursor;
+
+                    handle.addEventListener('mouseenter', () => {
+                        pathEl.classList.add('hovered');
+                    });
+                    handle.addEventListener('mouseleave', () => {
+                        pathEl.classList.remove('hovered');
+                    });
+
+                    handle.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        
+                        uiState.selectedNodeIds.clear();
+                        uiState.selectedEdgeId = edgeData.id;
+
+                        uiState.isDraggingRoutingHandle = true;
+                        uiState.draggedEdgeId = edgeData.id;
+                        uiState.routingDragStartMouse = { x: e.clientX, y: e.clientY };
+                        uiState.routingDragStartOffset = edgeData.routingOffset || 0;
+                        uiState.routingDragAxis = dragAxis;
+                        uiState.routingDragHandleType = 'offset';
+
+                        renderAll();
+                        updateSidebarUI();
+                    });
+
+                    handle.addEventListener('dblclick', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        edgeData.routingOffset = 0;
+                        saveState();
+                        renderAll();
+                        showToast("Routing segment reset to default.", "success");
+                    });
+
+                    edgesGroup.appendChild(handle);
+                }
+            }
         }
-    });
 
-    pathEl.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        uiState.selectedNodeIds.clear();
-        uiState.selectedEdgeId = edgeData.id;
-        renderAll();
-        updateSidebarUI();
-        const label = document.getElementById(`edge-label-${edgeData.id}`);
-        if (label) {
-            label.contentEditable = true;
-            label.focus();
-            document.execCommand('selectAll', false, null);
+        // Endpoint drag handles
+        if (isSelected) {
+            const startHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            startHandle.setAttribute('cx', sPort.x);
+            startHandle.setAttribute('cy', sPort.y);
+            startHandle.setAttribute('r', '5');
+            startHandle.setAttribute('class', 'edge-handle' + (uiState.draggedEdgeType === 'start' && uiState.draggedEdgeId === edgeData.id ? ' dragging' : ''));
+            startHandle.addEventListener('mousedown', (e) => startEdgeDrag(e, edgeData.id, 'start'));
+
+            const endHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            endHandle.setAttribute('cx', tPort.x);
+            endHandle.setAttribute('cy', tPort.y);
+            endHandle.setAttribute('r', '5');
+            endHandle.setAttribute('class', 'edge-handle' + (uiState.draggedEdgeType === 'end' && uiState.draggedEdgeId === edgeData.id ? ' dragging' : ''));
+            endHandle.addEventListener('mousedown', (e) => startEdgeDrag(e, edgeData.id, 'end'));
+
+            edgesGroup.appendChild(startHandle);
+            edgesGroup.appendChild(endHandle);
         }
-    });
 
-    pathEl.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        uiState.selectedNodeIds.clear();
-        uiState.selectedEdgeId = edgeData.id;
-        renderAll();
-        updateSidebarUI();
-        
-        document.getElementById('cm-add-task').style.display = 'none';
-        document.getElementById('cm-add-info').style.display = 'none';
-        document.getElementById('cm-delete').style.display = 'block';
-        contextMenu.style.display = 'flex';
-        contextMenu.style.left = e.clientX + 'px';
-        contextMenu.style.top = e.clientY + 'px';
-    });
+    // ── BEZIER: single path as before ─────────────────────────────────────────
+    } else {
+        const path = createSVGPath(sPort, tPort, edgeData);
 
-    edgesGroup.appendChild(pathEl);
+        const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathEl.setAttribute('d', path);
+        pathEl.setAttribute('class', 'edge-path' + (isSelected ? ' selected flowing' : ''));
+        pathEl.setAttribute('stroke-dasharray', lineStyleStr);
+        pathEl.style.setProperty('--edge-color', colorVar);
+        pathEl.id = `edge-${edgeData.id}`;
 
+        pathEl.addEventListener('mouseenter', () => {
+            pathEl.classList.add('flowing');
+        });
+        pathEl.addEventListener('mouseleave', () => {
+            if (!isSelected) pathEl.classList.remove('flowing');
+        });
+
+        if (edgeData.arrowEnd !== false) {
+            pathEl.setAttribute('marker-end', `url(#arrowhead-${colorName})`);
+        }
+        if (edgeData.arrowStart) {
+            pathEl.setAttribute('marker-start', `url(#arrowstart-${colorName})`);
+        }
+
+        pathEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!isSelected) {
+                uiState.selectedNodeIds.clear();
+                uiState.selectedEdgeId = edgeData.id;
+                renderAll();
+                updateSidebarUI();
+            }
+        });
+
+        pathEl.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            uiState.selectedNodeIds.clear();
+            uiState.selectedEdgeId = edgeData.id;
+            renderAll();
+            updateSidebarUI();
+            const label = document.getElementById(`edge-label-${edgeData.id}`);
+            if (label) {
+                label.contentEditable = true;
+                label.focus();
+                document.execCommand('selectAll', false, null);
+            }
+        });
+
+        pathEl.addEventListener('contextmenu', (e) => {
+            showEdgeContextMenu(e, edgeData.id);
+        });
+
+        edgesGroup.appendChild(pathEl);
+
+        if (isSelected) {
+            const startHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            startHandle.setAttribute('cx', sPort.x);
+            startHandle.setAttribute('cy', sPort.y);
+            startHandle.setAttribute('r', '5');
+            startHandle.setAttribute('class', 'edge-handle' + (uiState.draggedEdgeType === 'start' && uiState.draggedEdgeId === edgeData.id ? ' dragging' : ''));
+            startHandle.addEventListener('mousedown', (e) => startEdgeDrag(e, edgeData.id, 'start'));
+
+            const endHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            endHandle.setAttribute('cx', tPort.x);
+            endHandle.setAttribute('cy', tPort.y);
+            endHandle.setAttribute('r', '5');
+            endHandle.setAttribute('class', 'edge-handle' + (uiState.draggedEdgeType === 'end' && uiState.draggedEdgeId === edgeData.id ? ' dragging' : ''));
+            endHandle.addEventListener('mousedown', (e) => startEdgeDrag(e, edgeData.id, 'end'));
+
+            edgesGroup.appendChild(startHandle);
+            edgesGroup.appendChild(endHandle);
+        }
+    }
+
+    // ── Label (shared between both modes) ───────────────────────────────────────
     const dx = tPort.x - sPort.x;
     const dy = tPort.y - sPort.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
-    const curve = Math.max(dist * 0.5, 80);
-    const c1x = sPort.x + sPort.dir.x * curve;
-    const c1y = sPort.y + sPort.dir.y * curve;
-    const c2x = tPort.x + tPort.dir.x * curve;
-    const c2y = tPort.y + tPort.dir.y * curve;
-    
-    const t = edgeData.labelPosition !== undefined ? edgeData.labelPosition : 0.5;
-    const mt = 1 - t;
-    const mt2 = mt * mt;
-    const mt3 = mt2 * mt;
-    const t2 = t * t;
-    const t3 = t2 * t;
 
-    const labelX = mt3 * sPort.x + 3 * mt2 * t * c1x + 3 * mt * t2 * c2x + t3 * tPort.x;
-    const labelY = mt3 * sPort.y + 3 * mt2 * t * c1y + 3 * mt * t2 * c2y + t3 * tPort.y;
+    let labelX, labelY;
+    const t = edgeData.labelPosition !== undefined ? edgeData.labelPosition : 0.5;
+
+    if (activeMode === 'orthogonal') {
+        const pt = getPointOnOrthogonalPath(sPort, tPort, t, edgeData);
+        labelX = pt.x;
+        labelY = pt.y;
+    } else {
+        const curve = Math.max(dist * 0.5, 80);
+        const c1x = sPort.x + sPort.dir.x * curve;
+        const c1y = sPort.y + sPort.dir.y * curve;
+        const c2x = tPort.x + tPort.dir.x * curve;
+        const c2y = tPort.y + tPort.dir.y * curve;
+
+        const mt = 1 - t, mt2 = mt * mt, mt3 = mt2 * mt;
+        const t2 = t * t, t3 = t2 * t;
+
+        labelX = mt3 * sPort.x + 3 * mt2 * t * c1x + 3 * mt * t2 * c2x + t3 * tPort.x;
+        labelY = mt3 * sPort.y + 3 * mt2 * t * c1y + 3 * mt * t2 * c2y + t3 * tPort.y;
+    }
 
     const labelEl = document.createElement('div');
     labelEl.className = 'edge-label';
     labelEl.id = `edge-label-${edgeData.id}`;
-    if (uiState.selectedEdgeId === edgeData.id) {
-        labelEl.classList.add('selected');
-    }
+    if (isSelected) labelEl.classList.add('selected');
     labelEl.style.left = labelX + 'px';
     labelEl.style.top = labelY + 'px';
     labelEl.innerText = edgeData.text || '';
-    
-    if (!edgeData.text && uiState.selectedEdgeId !== edgeData.id) {
+
+    if (!edgeData.text && !isSelected) {
         labelEl.style.opacity = '0';
     } else {
         labelEl.style.opacity = '1';
@@ -623,7 +823,7 @@ function renderEdge(edgeData) {
         e.stopPropagation();
         uiState.isDraggingLabel = true;
         uiState.draggedLabelId = edgeData.id;
-        if (uiState.selectedEdgeId !== edgeData.id) {
+        if (!isSelected) {
             uiState.selectedNodeIds.clear();
             uiState.selectedEdgeId = edgeData.id;
             updateSidebarUI();
@@ -634,8 +834,7 @@ function renderEdge(edgeData) {
     labelEl.addEventListener('click', (e) => {
         e.stopPropagation();
         if (labelEl.contentEditable === "true") return;
-        
-        if (uiState.selectedEdgeId !== edgeData.id) {
+        if (!isSelected) {
             uiState.selectedNodeIds.clear();
             uiState.selectedEdgeId = edgeData.id;
             renderAll();
@@ -646,7 +845,6 @@ function renderEdge(edgeData) {
     labelEl.addEventListener('dblclick', (e) => {
         e.stopPropagation();
         if (labelEl.contentEditable === "true") return;
-        
         uiState.selectedNodeIds.clear();
         uiState.selectedEdgeId = edgeData.id;
         labelEl.contentEditable = "true";
@@ -669,41 +867,10 @@ function renderEdge(edgeData) {
     });
 
     labelEl.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        uiState.selectedNodeIds.clear();
-        uiState.selectedEdgeId = edgeData.id;
-        renderAll();
-        updateSidebarUI();
-        
-        document.getElementById('cm-add-task').style.display = 'none';
-        document.getElementById('cm-add-info').style.display = 'none';
-        document.getElementById('cm-delete').style.display = 'block';
-        contextMenu.style.display = 'flex';
-        contextMenu.style.left = e.clientX + 'px';
-        contextMenu.style.top = e.clientY + 'px';
+        showEdgeContextMenu(e, edgeData.id);
     });
 
     labelsContainer.appendChild(labelEl);
-
-    if (uiState.selectedEdgeId === edgeData.id) {
-        const startHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        startHandle.setAttribute('cx', sPort.x);
-        startHandle.setAttribute('cy', sPort.y);
-        startHandle.setAttribute('r', '5');
-        startHandle.setAttribute('class', 'edge-handle' + (uiState.draggedEdgeType === 'start' && uiState.draggedEdgeId === edgeData.id ? ' dragging' : ''));
-        startHandle.addEventListener('mousedown', (e) => startEdgeDrag(e, edgeData.id, 'start'));
-        
-        const endHandle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        endHandle.setAttribute('cx', tPort.x);
-        endHandle.setAttribute('cy', tPort.y);
-        endHandle.setAttribute('r', '5');
-        endHandle.setAttribute('class', 'edge-handle' + (uiState.draggedEdgeType === 'end' && uiState.draggedEdgeId === edgeData.id ? ' dragging' : ''));
-        endHandle.addEventListener('mousedown', (e) => startEdgeDrag(e, edgeData.id, 'end'));
-        
-        edgesGroup.appendChild(startHandle);
-        edgesGroup.appendChild(endHandle);
-    }
 }
 
 function startEdgeDrag(e, edgeId, type) {
@@ -730,7 +897,161 @@ function startEdgeDrag(e, edgeId, type) {
     if (labelEl) labelEl.style.display = 'none';
 }
 
-function createSVGPath(p1, p2) {
+function orthogonalizePoints(points, p1Dir) {
+    let raw = [points[0]];
+    let currentDir = p1Dir.x !== 0 ? 'H' : 'V';
+
+    for (let i = 1; i < points.length; i++) {
+        const A = raw[raw.length - 1];
+        const B = points[i];
+
+        const dx = B.x - A.x;
+        const dy = B.y - A.y;
+
+        if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+            continue; // Skip consecutive duplicates
+        }
+
+        if (Math.abs(dx) < 0.1 || Math.abs(dy) < 0.1) {
+            raw.push(B);
+            if (Math.abs(dx) > 0.1) currentDir = 'H';
+            if (Math.abs(dy) > 0.1) currentDir = 'V';
+        } else {
+            if (currentDir === 'H') {
+                raw.push({ x: A.x, y: B.y });
+                raw.push(B);
+                currentDir = 'H';
+            } else {
+                raw.push({ x: B.x, y: A.y });
+                raw.push(B);
+                currentDir = 'V';
+            }
+        }
+    }
+    return raw;
+}
+
+
+function getOrthogonalPoints(p1, p2, edgeData) {
+    const buffer = 30;
+    const p1_exit = { x: p1.x + p1.dir.x * buffer, y: p1.y + p1.dir.y * buffer };
+    const p2_enter = { x: p2.x + p2.dir.x * buffer, y: p2.y + p2.dir.y * buffer };
+
+    let points = [p1, p1_exit];
+
+    const offset = (edgeData && edgeData.routingOffset) || 0;
+
+    if (p1.dir.x !== 0) {
+        if (p2.dir.x !== 0) {
+            const midX = (p1_exit.x + p2_enter.x) / 2 + offset;
+            points.push({ x: midX, y: p1_exit.y });
+            points.push({ x: midX, y: p2_enter.y });
+        } else {
+            const midX = p2_enter.x + offset;
+            points.push({ x: midX, y: p1_exit.y });
+            points.push({ x: midX, y: p2_enter.y });
+        }
+    } else {
+        if (p2.dir.y !== 0) {
+            const midY = (p1_exit.y + p2_enter.y) / 2 + offset;
+            points.push({ x: p1_exit.x, y: midY });
+            points.push({ x: p2_enter.x, y: midY });
+        } else {
+            const midY = p2_enter.y + offset;
+            points.push({ x: p1_exit.x, y: midY });
+            points.push({ x: p2_enter.x, y: midY });
+        }
+    }
+
+    points.push(p2_enter);
+    points.push(p2);
+    
+    return orthogonalizePoints(points, p1.dir);
+}
+
+function getPointOnOrthogonalPath(p1, p2, t, edgeData) {
+    const points = getOrthogonalPoints(p1, p2, edgeData);
+    let totalLength = 0;
+    let segments = [];
+    for (let i = 0; i < points.length - 1; i++) {
+        const dx = points[i+1].x - points[i].x;
+        const dy = points[i+1].y - points[i].y;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        totalLength += len;
+        segments.push({ p1: points[i], p2: points[i+1], len: len });
+    }
+    
+    if (totalLength === 0) return p1;
+    
+    let targetDist = t * totalLength;
+    let currentDist = 0;
+    
+    for (let seg of segments) {
+        if (currentDist + seg.len >= targetDist) {
+            const remain = targetDist - currentDist;
+            const ratio = remain / seg.len;
+            return {
+                x: seg.p1.x + (seg.p2.x - seg.p1.x) * ratio,
+                y: seg.p1.y + (seg.p2.y - seg.p1.y) * ratio
+            };
+        }
+        currentDist += seg.len;
+    }
+    return points[points.length - 1];
+}
+
+function createOrthogonalPath(p1, p2, edgeData, cornerRadius = 12) {
+    const points = getOrthogonalPoints(p1, p2, edgeData);
+    if (points.length === 0) return '';
+    
+    let path = `M ${points[0].x} ${points[0].y}`;
+    
+    for (let i = 1; i < points.length - 1; i++) {
+        const prev = points[i-1];
+        const curr = points[i];
+        const next = points[i+1];
+        
+        const dx1 = prev.x - curr.x;
+        const dy1 = prev.y - curr.y;
+        const len1 = Math.sqrt(dx1*dx1 + dy1*dy1);
+        
+        const dx2 = next.x - curr.x;
+        const dy2 = next.y - curr.y;
+        const len2 = Math.sqrt(dx2*dx2 + dy2*dy2);
+        
+        const r = Math.min(cornerRadius, len1 / 3, len2 / 3);
+        
+        if (r > 0) {
+            const pStart = {
+                x: curr.x + (dx1 / len1) * r,
+                y: curr.y + (dy1 / len1) * r
+            };
+            const pEnd = {
+                x: curr.x + (dx2 / len2) * r,
+                y: curr.y + (dy2 / len2) * r
+            };
+            
+            path += ` L ${pStart.x} ${pStart.y}`;
+            path += ` Q ${curr.x} ${curr.y}, ${pEnd.x} ${pEnd.y}`;
+        } else {
+            path += ` L ${curr.x} ${curr.y}`;
+        }
+    }
+    
+    path += ` L ${points[points.length - 1].x} ${points[points.length - 1].y}`;
+    return path;
+}
+
+function createSVGPath(p1, p2, edgeData) {
+    const page = state.pages.find(p => p.id === uiState.activePageId);
+    const defaultRouting = (page && page.settings && page.settings.routingMode) || 'bezier';
+    const edgeRouting = edgeData && edgeData.routingMode;
+    const activeMode = (edgeRouting && edgeRouting !== 'default') ? edgeRouting : defaultRouting;
+
+    if (activeMode === 'orthogonal') {
+        return createOrthogonalPath(p1, p2, edgeData);
+    }
+
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
@@ -1011,6 +1332,25 @@ function setupEventListeners() {
                 node.height = Math.max(80, (node.height || 80) + dy);
                 renderAll();
             }
+        } else if (uiState.isDraggingRoutingHandle) {
+            const edge = state.edges.find(ed => ed.id === uiState.draggedEdgeId);
+            if (edge) {
+                const dx = (e.clientX - uiState.routingDragStartMouse.x) / uiState.zoom;
+                const dy = (e.clientY - uiState.routingDragStartMouse.y) / uiState.zoom;
+                const delta = uiState.routingDragAxis === 'x' ? dx : dy;
+                let newVal = uiState.routingDragStartOffset + delta;
+
+                // Clamp to Grid Snapping with Double the Resolution
+                const page = state.pages.find(p => p.id === uiState.activePageId);
+                if (page && page.settings && page.settings.snapToGrid) {
+                    const gridSize = page.settings.gridSize || 40;
+                    const snapRes = gridSize / 2; // Snapping with double the resolution (half the grid size)
+                    newVal = Math.round(newVal / snapRes) * snapRes;
+                }
+
+                edge.routingOffset = newVal;
+                renderAll();
+            }
         } else if (uiState.isDraggingNode) {
             uiState.hasDragged = true;
             const dx = e.movementX / uiState.zoom;
@@ -1111,15 +1451,27 @@ function setupEventListeners() {
                 let bestT = 0.5;
                 let minDist = Infinity;
                 
+                const page = state.pages.find(p => p.id === uiState.activePageId);
+                const defaultRouting = (page && page.settings && page.settings.routingMode) || 'bezier';
+                const edgeRouting = edge.routingMode;
+                const activeMode = (edgeRouting && edgeRouting !== 'default') ? edgeRouting : defaultRouting;
+
                 for(let i = 0; i <= 20; i++) {
                     const t = i / 20;
-                    const mt = 1 - t;
-                    const mt2 = mt * mt;
-                    const mt3 = mt2 * mt;
-                    const t2 = t * t;
-                    const t3 = t2 * t;
-                    const px = mt3 * sPort.x + 3 * mt2 * t * c1x + 3 * mt * t2 * c2x + t3 * tPort.x;
-                    const py = mt3 * sPort.y + 3 * mt2 * t * c1y + 3 * mt * t2 * c2y + t3 * tPort.y;
+                    let px, py;
+                    if (activeMode === 'orthogonal') {
+                        const pt = getPointOnOrthogonalPath(sPort, tPort, t, edge);
+                        px = pt.x;
+                        py = pt.y;
+                    } else {
+                        const mt = 1 - t;
+                        const mt2 = mt * mt;
+                        const mt3 = mt2 * mt;
+                        const t2 = t * t;
+                        const t3 = t2 * t;
+                        px = mt3 * sPort.x + 3 * mt2 * t * c1x + 3 * mt * t2 * c2x + t3 * tPort.x;
+                        py = mt3 * sPort.y + 3 * mt2 * t * c1y + 3 * mt * t2 * c2y + t3 * tPort.y;
+                    }
                     
                     const d = (px - mx)**2 + (py - my)**2;
                     if (d < minDist) {
@@ -1135,6 +1487,11 @@ function setupEventListeners() {
     });
 
     window.addEventListener('mouseup', () => {
+        if (uiState.isDraggingRoutingHandle) {
+            uiState.isDraggingRoutingHandle = false;
+            uiState.draggedEdgeId = null;
+            saveState();
+        }
         if (uiState.isResizing) {
             uiState.isResizing = false;
             uiState.resizeNodeId = null;
@@ -1197,6 +1554,31 @@ function setupEventListeners() {
         }
     });
 
+    workspace.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    });
+
+    workspace.addEventListener('drop', (e) => {
+        e.preventDefault();
+        try {
+            const dataStr = e.dataTransfer.getData('application/json');
+            if (!dataStr) return;
+            const data = JSON.parse(dataStr);
+            if (data.type === 'template') {
+                const t = state.templates.find(temp => temp.id === data.id);
+                if (t) {
+                    const rect = workspace.getBoundingClientRect();
+                    const dropX = (e.clientX - rect.left - uiState.canvasOffset.x) / uiState.zoom;
+                    const dropY = (e.clientY - rect.top - uiState.canvasOffset.y) / uiState.zoom;
+                    instantiateTemplate(t, dropX, dropY);
+                }
+            }
+        } catch (err) {
+            console.error("Failed to drop template:", err);
+        }
+    });
+
     workspace.addEventListener('contextmenu', (e) => {
         if (e.target.id === 'workspace' || e.target.id === 'edges-canvas' || e.target.id === 'nodes-container') {
             e.preventDefault();
@@ -1213,6 +1595,7 @@ function setupEventListeners() {
             document.getElementById('cm-copy').style.display = uiState.selectedNodeIds.size > 0 ? 'block' : 'none';
             document.getElementById('cm-paste').style.display = clipboardData.nodes.length > 0 ? 'block' : 'none';
             document.getElementById('cm-delete').style.display = 'none';
+            document.getElementById('cm-save-template').style.display = 'none';
             
             const rect = workspace.getBoundingClientRect();
             canvasContextMenuLocation = {
@@ -1296,6 +1679,13 @@ function setupEventListeners() {
         }
     });
     
+    document.getElementById('es-edge-routing').addEventListener('change', (e) => {
+        if (uiState.selectedEdgeId) {
+            const edge = state.edges.find(ed => ed.id === uiState.selectedEdgeId);
+            if (edge) { edge.routingMode = e.target.value; saveState(); renderAll(); }
+        }
+    });
+    
     document.querySelectorAll('#ds-edge-color-palette .color-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             if (uiState.selectedEdgeId) {
@@ -1356,6 +1746,15 @@ function setupEventListeners() {
         }
     });
 
+    document.getElementById('ps-edge-routing').addEventListener('change', (e) => {
+        const page = state.pages.find(p => p.id === uiState.activePageId);
+        if (page) {
+            page.settings.routingMode = e.target.value;
+            saveState();
+            renderAll();
+        }
+    });
+
     document.getElementById('ds-add-nested-task').addEventListener('click', () => addNestedNodeToUI('task'));
     document.getElementById('ds-add-nested-info').addEventListener('click', () => addNestedNodeToUI('info'));
 
@@ -1382,6 +1781,10 @@ function setupEventListeners() {
     document.getElementById('cm-ungroup').addEventListener('click', () => { ungroupBubble(); closeContextMenu(); });
     document.getElementById('cm-copy').addEventListener('click', () => { copySelection(); closeContextMenu(); });
     document.getElementById('cm-paste').addEventListener('click', () => { pasteSelection(); closeContextMenu(); });
+    document.getElementById('cm-save-template').addEventListener('click', () => {
+        closeContextMenu();
+        saveTemplateFromSelection();
+    });
 
     window.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
@@ -1662,6 +2065,30 @@ function showContextMenu(e, id) {
 
     document.getElementById('cm-copy').style.display = 'block';
     document.getElementById('cm-paste').style.display = clipboardData.nodes.length > 0 ? 'block' : 'none';
+    document.getElementById('cm-save-template').style.display = uiState.selectedNodeIds.size > 0 ? 'block' : 'none';
+}
+
+function showEdgeContextMenu(e, edgeId) {
+    e.preventDefault();
+    e.stopPropagation();
+    uiState.selectedNodeIds.clear();
+    uiState.selectedEdgeId = edgeId;
+    renderAll();
+    updateSidebarUI();
+    
+    document.getElementById('cm-add-task').style.display = 'none';
+    document.getElementById('cm-add-info').style.display = 'none';
+    document.getElementById('cm-add-container').style.display = 'none';
+    document.getElementById('cm-group').style.display = 'none';
+    document.getElementById('cm-ungroup').style.display = 'none';
+    document.getElementById('cm-copy').style.display = 'none';
+    document.getElementById('cm-paste').style.display = 'none';
+    document.getElementById('cm-save-template').style.display = 'none';
+    document.getElementById('cm-delete').style.display = 'block';
+    
+    contextMenu.style.display = 'flex';
+    contextMenu.style.left = e.clientX + 'px';
+    contextMenu.style.top = e.clientY + 'px';
 }
 
 function closeContextMenu() {
@@ -1789,6 +2216,7 @@ function updateSidebarUI() {
             document.getElementById('es-line-style').value = edge.lineStyle || 'solid';
             document.getElementById('es-arrow-start').checked = !!edge.arrowStart;
             document.getElementById('es-arrow-end').checked = edge.arrowEnd !== false;
+            document.getElementById('es-edge-routing').value = edge.routingMode || 'default';
             
             const color = edge.color || 'gold';
             document.querySelectorAll('#ds-edge-color-palette .color-btn').forEach(btn => {
@@ -1856,6 +2284,7 @@ function updateSidebarUI() {
             document.getElementById('ps-default-align').value = activePage.settings.defaultAlignment;
             document.getElementById('ps-grid-size').value = activePage.settings.gridSize;
             document.getElementById('ps-snap-toggle').checked = activePage.settings.snapToGrid;
+            document.getElementById('ps-edge-routing').value = activePage.settings.routingMode || 'bezier';
         }
     }
 
@@ -2220,3 +2649,298 @@ function renderColorInputs() {
 
 setupSettings();
 init();
+
+// --- CUSTOM TEMPLATES FUNCTIONALITY ---
+
+function getDescendantNodeIds(nodeIds) {
+    let descendants = new Set(nodeIds);
+    let queue = [...nodeIds];
+    while (queue.length > 0) {
+        const currentId = queue.shift();
+        const children = state.nodes.filter(n => n.parentId === currentId);
+        children.forEach(child => {
+            if (!descendants.has(child.id)) {
+                descendants.add(child.id);
+                queue.push(child.id);
+            }
+        });
+    }
+    return Array.from(descendants);
+}
+
+function saveTemplateFromSelection() {
+    const selectedIds = Array.from(uiState.selectedNodeIds);
+    if (selectedIds.length === 0) return;
+
+    // Recursively resolve all nested descendant bubbles!
+    const allIdsToSave = getDescendantNodeIds(selectedIds);
+
+    openCustomDialog({
+        title: "Save as Template",
+        message: "Enter a name for this template:",
+        showInput: true,
+        defaultValue: "New Template",
+        confirmText: "Save",
+        onConfirm: (templateName) => {
+            if (!templateName || templateName.trim() === '') return;
+            
+            const nodesToSave = state.nodes.filter(n => allIdsToSave.includes(n.id));
+            const edgesToSave = state.edges.filter(e => allIdsToSave.includes(e.source) && allIdsToSave.includes(e.target));
+            
+            if (nodesToSave.length === 0) return;
+
+            // Calculate bounding box to normalize coordinates
+            let minX = Infinity, minY = Infinity;
+            nodesToSave.forEach(n => {
+                if (n.x < minX) minX = n.x;
+                if (n.y < minY) minY = n.y;
+            });
+
+            // Deep clone and normalize
+            const templateNodes = JSON.parse(JSON.stringify(nodesToSave));
+            templateNodes.forEach(n => {
+                n.x -= minX;
+                n.y -= minY;
+                if (n.parentId && !allIdsToSave.includes(n.parentId)) {
+                    n.parentId = null;
+                }
+            });
+
+            const templateEdges = JSON.parse(JSON.stringify(edgesToSave));
+
+            const newTemplate = {
+                id: generateId(),
+                title: templateName,
+                nodes: templateNodes,
+                edges: templateEdges
+            };
+
+            state.templates.push(newTemplate);
+            saveState();
+            renderTemplatesList();
+            showToast(`Template "${templateName}" saved successfully!`, 'success');
+        }
+    });
+}
+
+function renderTemplatesList() {
+    const list = document.getElementById('templates-list');
+    if (!list) return;
+    list.innerHTML = '';
+    
+    if (state.templates.length === 0) {
+        list.innerHTML = `<div style="font-size: 12px; color: var(--color-text-muted); text-align: center; padding: 12px;">No templates saved. Select bubbles and right-click to save!</div>`;
+        return;
+    }
+
+    state.templates.forEach(t => {
+        const item = document.createElement('div');
+        item.className = 'page-item';
+        item.style.cursor = 'grab';
+        item.style.display = 'flex';
+        item.style.alignItems = 'center';
+        item.style.justifyContent = 'space-between';
+        item.style.padding = '8px 12px';
+        item.style.borderRadius = '8px';
+        item.style.background = 'rgba(255, 255, 255, 0.05)';
+        item.style.border = '1px solid var(--color-surface-border)';
+        item.draggable = true;
+        
+        item.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('application/json', JSON.stringify({ type: 'template', id: t.id }));
+            item.style.opacity = '0.5';
+        });
+
+        item.addEventListener('dragend', () => {
+            item.style.opacity = '1';
+        });
+        
+        item.addEventListener('click', () => {
+            const dropX = (window.innerWidth / 2 - uiState.canvasOffset.x) / uiState.zoom;
+            const dropY = (window.innerHeight / 2 - uiState.canvasOffset.y) / uiState.zoom;
+            instantiateTemplate(t, dropX - 100, dropY - 100);
+        });
+
+        const titleSpan = document.createElement('span');
+        titleSpan.innerText = t.title;
+        titleSpan.style.flexGrow = '1';
+        titleSpan.style.overflow = 'hidden';
+        titleSpan.style.textOverflow = 'ellipsis';
+        titleSpan.style.whiteSpace = 'nowrap';
+        item.appendChild(titleSpan);
+
+        const delBtn = document.createElement('button');
+        delBtn.innerHTML = `
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+        `;
+        delBtn.className = 'icon-btn';
+        delBtn.style.padding = '4px';
+        delBtn.style.marginLeft = '8px';
+        delBtn.style.border = 'none';
+        delBtn.style.background = 'none';
+        delBtn.style.color = 'var(--color-danger)';
+        delBtn.style.cursor = 'pointer';
+        delBtn.onclick = (e) => {
+            e.stopPropagation();
+            openCustomDialog({
+                title: "Delete Template",
+                message: `Are you sure you want to delete the template "${t.title}"?`,
+                showInput: false,
+                confirmText: "Delete",
+                onConfirm: () => {
+                    const oldTitle = t.title;
+                    state.templates = state.templates.filter(temp => temp.id !== t.id);
+                    saveState();
+                    renderTemplatesList();
+                    showToast(`Template "${oldTitle}" deleted successfully.`, 'danger');
+                }
+            });
+        };
+        item.appendChild(delBtn);
+
+        list.appendChild(item);
+    });
+}
+
+function instantiateTemplate(template, dropX, dropY) {
+    uiState.selectedNodeIds.clear();
+    const idMap = {};
+    
+    template.nodes.forEach(n => {
+        const newId = generateId();
+        idMap[n.id] = newId;
+        const clonedNode = JSON.parse(JSON.stringify(n));
+        clonedNode.id = newId;
+        clonedNode.x = dropX + n.x;
+        clonedNode.y = dropY + n.y;
+        clonedNode.pageId = uiState.activePageId;
+        if (clonedNode.parentId && idMap[clonedNode.parentId]) {
+            clonedNode.parentId = idMap[clonedNode.parentId];
+        } else {
+            clonedNode.parentId = uiState.currentCanvasId;
+        }
+        state.nodes.push(clonedNode);
+        uiState.selectedNodeIds.add(newId);
+    });
+
+    template.edges.forEach(e => {
+        const clonedEdge = JSON.parse(JSON.stringify(e));
+        clonedEdge.id = generateId();
+        if (idMap[e.source] && idMap[e.target]) {
+            clonedEdge.source = idMap[e.source];
+            clonedEdge.target = idMap[e.target];
+            state.edges.push(clonedEdge);
+        }
+    });
+
+    saveState();
+    renderAll();
+    updateSidebarUI();
+}
+
+// --- Sleek Custom Dialog & Toast System ---
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    
+    let iconSVG = '';
+    if (type === 'success') {
+        iconSVG = `<svg class="toast-icon success" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    } else if (type === 'danger') {
+        iconSVG = `<svg class="toast-icon danger" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+    } else {
+        iconSVG = `<svg class="toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+    }
+    
+    toast.innerHTML = `
+        <div style="display:flex; align-items:center; gap:8px;">
+            ${iconSVG}
+            <span>${message}</span>
+        </div>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Force reflow
+    toast.offsetHeight;
+    
+    // Slide in
+    toast.classList.add('show');
+    
+    // Auto remove
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 400);
+    }, 3000);
+}
+
+function openCustomDialog({ title, message, showInput = true, defaultValue = '', placeholder = '', confirmText = 'Confirm', cancelText = 'Cancel', onConfirm, onCancel }) {
+    const dialog = document.getElementById('custom-dialog');
+    const backdrop = document.getElementById('custom-dialog-backdrop');
+    const titleEl = document.getElementById('custom-dialog-title');
+    const messageEl = document.getElementById('custom-dialog-message');
+    const inputEl = document.getElementById('custom-dialog-input');
+    const confirmBtn = document.getElementById('custom-dialog-confirm');
+    const cancelBtn = document.getElementById('custom-dialog-cancel');
+    
+    titleEl.innerText = title;
+    messageEl.innerText = message;
+    
+    if (showInput) {
+        inputEl.style.display = 'block';
+        inputEl.value = defaultValue;
+        inputEl.placeholder = placeholder;
+    } else {
+        inputEl.style.display = 'none';
+    }
+    
+    confirmBtn.innerText = confirmText;
+    cancelBtn.innerText = cancelText;
+    
+    dialog.style.display = 'flex';
+    backdrop.style.display = 'block';
+    
+    if (showInput) {
+        setTimeout(() => inputEl.focus(), 50);
+    }
+    
+    const cleanup = () => {
+        dialog.style.display = 'none';
+        backdrop.style.display = 'none';
+        
+        // Remove event listeners by cloning nodes
+        const newConfirm = confirmBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
+        const newCancel = cancelBtn.cloneNode(true);
+        cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+    };
+    
+    document.getElementById('custom-dialog-confirm').addEventListener('click', () => {
+        const val = showInput ? inputEl.value : true;
+        cleanup();
+        if (onConfirm) onConfirm(val);
+    });
+    
+    document.getElementById('custom-dialog-cancel').addEventListener('click', () => {
+        cleanup();
+        if (onCancel) onCancel();
+    });
+    
+    // Close on escape or enter
+    const handleKey = (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('custom-dialog-confirm').click();
+            window.removeEventListener('keydown', handleKey);
+        } else if (e.key === 'Escape') {
+            document.getElementById('custom-dialog-cancel').click();
+            window.removeEventListener('keydown', handleKey);
+        }
+    };
+    window.addEventListener('keydown', handleKey);
+}

@@ -200,6 +200,15 @@
                 </div>
             </div>
 
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 13px; display: block; margin-bottom: 4px;">Edge Routing</label>
+                <select id="es-edge-routing" style="width: 100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none;">
+                    <option value="default">Default</option>
+                    <option value="bezier">Bezier (Curve)</option>
+                    <option value="orthogonal">Orthogonal (90°)</option>
+                </select>
+            </div>
+
             <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Color Theme</h3>
             <div id="ds-edge-color-palette" style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
                 <button class="color-btn" data-color="gold" style="background: var(--color-accent-gold);" title="Gold"></button>
@@ -237,6 +246,14 @@
                 <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
                     <input type="checkbox" id="ps-snap-toggle" style="width:16px; height:16px; cursor:pointer;"> Snap to Grid
                 </label>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 13px; display: block; margin-bottom: 4px;">Default Edge Routing</label>
+                <select id="ps-edge-routing" style="width: 100%; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none;">
+                    <option value="bezier" selected>Bezier (Curve)</option>
+                    <option value="orthogonal">Orthogonal (90°)</option>
+                </select>
             </div>
         </div>
     </aside>
@@ -276,6 +293,22 @@
 
     <!-- Modal Backdrop -->
     <div id="settings-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.3); backdrop-filter: blur(4px); z-index: 2999;"></div>
+
+    <!-- Custom Dialog Modal -->
+    <div id="custom-dialog" class="glass-panel" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 340px; z-index: 4000; border-radius: 16px; padding: 24px; flex-direction: column; align-items: stretch; text-align: center; box-shadow: var(--shadow-lg);">
+        <h3 id="custom-dialog-title" style="font-family: var(--font-serif); font-size: 18px; color: var(--color-accent-gold); margin-top: 0; margin-bottom: 8px;">Template Name</h3>
+        <p id="custom-dialog-message" style="font-size: 13px; color: var(--color-text-muted); margin-top: 0; margin-bottom: 16px;">Enter a name for this template:</p>
+        <input type="text" id="custom-dialog-input" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none; margin-bottom: 20px; box-sizing: border-box;">
+        <div style="display: flex; gap: 10px; justify-content: flex-end; width: 100%;">
+            <button id="custom-dialog-cancel" class="outline-btn" style="flex: 1; margin: 0; padding: 8px;">Cancel</button>
+            <button id="custom-dialog-confirm" class="outline-btn" style="flex: 1; margin: 0; padding: 8px; background: var(--color-accent-gold); color: #000; font-weight: 500; border-color: var(--color-accent-gold);">Confirm</button>
+        </div>
+    </div>
+    
+    <div id="custom-dialog-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.25); backdrop-filter: blur(4px); z-index: 3999;"></div>
+
+    <!-- Sleek Toast Notification Container -->
+    <div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 5000; display: flex; flex-direction: column; gap: 10px; pointer-events: none;"></div>
 
     <script src="app.js"></script>
 </body>
