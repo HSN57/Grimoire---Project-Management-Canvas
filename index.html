@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="style.css">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <!-- Sidebar Toggles -->
@@ -28,8 +29,15 @@
             <button id="btn-add-page" class="icon-btn" style="width: 24px; height: 24px; font-size: 16px; border: 1px solid var(--color-surface-border); border-radius: 4px;">+</button>
         </div>
 
-        <div id="pages-list" style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 4px;">
+        <div id="pages-list" style="height: 40%; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 4px;">
             <!-- Pages rendered dynamically -->
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; margin-bottom: 8px;">
+            <h3 style="font-size: 14px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 1px;">Templates</h3>
+        </div>
+        <div id="templates-list" style="flex-grow: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 4px;">
+            <!-- Templates rendered dynamically -->
         </div>
         <div class="sidebar-footer" style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;">
             <button id="export-page" class="outline-btn" style="width: 100%; padding: 8px; font-size: 12px; margin-top: 0;">Export Page (.txt)</button>
@@ -112,6 +120,7 @@
         <button id="cm-ungroup">Ungroup Bubble</button>
         <button id="cm-copy">Copy</button>
         <button id="cm-paste">Paste</button>
+        <button id="cm-save-template">Save as Template</button>
         <button id="cm-delete" class="danger">Delete</button>
     </div>
 
@@ -146,8 +155,15 @@
                 <button class="color-btn" data-color="slate" style="background: var(--color-accent-slate);" title="Slate"></button>
             </div>
 
-            <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Description</h3>
-            <textarea id="ds-description" placeholder="Add notes..."></textarea>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; margin-bottom: 8px;">
+                <h3 style="font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Description</h3>
+                <div style="display: flex; gap: 4px;">
+                    <button id="ds-desc-edit-btn" class="text-btn active" style="font-size: 11px; padding: 2px 6px;">Edit</button>
+                    <button id="ds-desc-preview-btn" class="text-btn" style="font-size: 11px; padding: 2px 6px;">Preview</button>
+                </div>
+            </div>
+            <textarea id="ds-description" placeholder="Add notes (Markdown supported)..."></textarea>
+            <div id="ds-description-preview" class="markdown-body" style="display: none; width: 100%; min-height: 100px; padding: 12px; border-radius: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--color-surface-border); font-size: 13px; overflow-y: auto; color: var(--color-text-main); line-height: 1.5;"></div>
             
             <div id="ds-nested-section">
                 <h3 style="margin-top: 20px; font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Tasks</h3>

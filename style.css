@@ -878,3 +878,37 @@ select option {
     border: none;
     border-radius: 4px;
 }
+
+/* Markdown Styles */
+.markdown-body {
+    font-family: var(--font-sans);
+}
+.markdown-body p { margin-bottom: 8px; }
+.markdown-body p:last-child { margin-bottom: 0; }
+.markdown-body ul, .markdown-body ol { margin-left: 20px; margin-bottom: 8px; }
+.markdown-body li { margin-bottom: 4px; }
+.markdown-body strong { font-weight: 600; color: var(--color-accent-gold); }
+.markdown-body code {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+.markdown-body pre {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 8px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin-bottom: 8px;
+}
+.markdown-body pre code {
+    background: none;
+    padding: 0;
+}
+.markdown-body blockquote {
+    border-left: 3px solid var(--color-accent-gold);
+    padding-left: 8px;
+    color: var(--color-text-muted);
+    margin-bottom: 8px;
+}

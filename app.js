@@ -10,6 +10,7 @@ let state = {
     nodes: [], // { id, x, y, type, title, description, parentId, pageId, completed, textAlign, width, height }
     edges: [], // { id, source, target }
     theme: 'light',
+    templates: [],
     settings: {
         customColors: { light: {}, dark: {} }
     }
@@ -109,6 +110,7 @@ function loadState() {
             const parsed = JSON.parse(saved);
             state.theme = parsed.theme || 'light';
             state.edges = parsed.edges || [];
+            state.templates = parsed.templates || [];
             state.settings = parsed.settings || { customColors: { light: {}, dark: {} } };
             
             if (parsed.pages && parsed.pages.length > 0) {
@@ -152,6 +154,7 @@ function setupDefaultState() {
         title: 'Main Workspace',
         settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false }
     }];
+    state.templates = [];
     state.settings = { customColors: { light: {}, dark: {} } };
     uiState.activePageId = 'default-page';
 }
@@ -398,6 +401,11 @@ function renderNode(nodeData) {
         if (children.length > 0) {
             subtasksHtml += `<span class="sub-node-pill" style="background: var(--color-accent-blue); color: #fff;">${children.length} Nested</span>`;
         }
+    }
+
+    if (nodeData.description && nodeData.description.trim() !== '') {
+        let mdHtml = typeof marked !== 'undefined' ? marked.parse(nodeData.description) : nodeData.description;
+        content += `<div class="node-markdown markdown-body" style="margin-top: 8px; font-size: 11px; color: var(--color-text-muted); text-align: left; background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px;">${mdHtml}</div>`;
     }
 
     content += `<div class="sub-nodes-container">${subtasksHtml}</div>`;
@@ -1219,7 +1227,33 @@ function setupEventListeners() {
     });
 
     document.getElementById('ds-title').addEventListener('input', updateActiveNodeFromUI);
-    document.getElementById('ds-description').addEventListener('input', updateActiveNodeFromUI);
+    
+    // Markdown Edit/Preview Toggle
+    const descEditBtn = document.getElementById('ds-desc-edit-btn');
+    const descPreviewBtn = document.getElementById('ds-desc-preview-btn');
+    const descTextarea = document.getElementById('ds-description');
+    const descPreviewArea = document.getElementById('ds-description-preview');
+
+    if (descEditBtn && descPreviewBtn && descTextarea && descPreviewArea) {
+        descEditBtn.addEventListener('click', () => {
+            descEditBtn.classList.add('active');
+            descPreviewBtn.classList.remove('active');
+            descTextarea.style.display = 'block';
+            descPreviewArea.style.display = 'none';
+        });
+
+        descPreviewBtn.addEventListener('click', () => {
+            descPreviewBtn.classList.add('active');
+            descEditBtn.classList.remove('active');
+            descTextarea.style.display = 'none';
+            descPreviewArea.style.display = 'block';
+            descPreviewArea.innerHTML = typeof marked !== 'undefined' ? marked.parse(descTextarea.value || '') : '<em>Markdown parser not loaded.</em>';
+        });
+
+        descTextarea.addEventListener('input', updateActiveNodeFromUI);
+    } else {
+        document.getElementById('ds-description').addEventListener('input', updateActiveNodeFromUI);
+    }
     
     document.querySelectorAll('.align-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1794,6 +1828,11 @@ function updateSidebarUI() {
             document.getElementById('ds-title').innerText = node.title;
             document.getElementById('ds-description').value = node.description || '';
             document.getElementById('ds-description').disabled = false;
+            
+            // Reset to Edit mode
+            if (document.getElementById('ds-desc-edit-btn')) {
+                document.getElementById('ds-desc-edit-btn').click();
+            }
             document.getElementById('ds-title').setAttribute('contenteditable', 'true');
             
             document.querySelectorAll('#ds-node-color-palette .color-btn').forEach(btn => {
