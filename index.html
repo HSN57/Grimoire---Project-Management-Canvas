@@ -65,6 +65,10 @@
             <button id="zoom-in" class="icon-btn">+</button>
             <button id="zoom-reset" class="text-btn">100%</button>
             <button id="zoom-out" class="icon-btn">-</button>
+            <div style="width: 1px; height: 16px; background: var(--color-surface-border); margin: 0 4px;"></div>
+            <button id="minimap-toggle" class="icon-btn" title="Toggle Minimap">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
+            </button>
         </div>
         
         <div id="minimap-container" class="glass-panel">
@@ -155,6 +159,25 @@
                 <button class="color-btn" data-color="slate" style="background: var(--color-accent-slate);" title="Slate"></button>
             </div>
 
+            <div id="ds-deadline-section">
+                <h3>⏰ Deadline</h3>
+                <div style="display: flex; flex-direction: column; gap: 0;">
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <span class="deadline-row-label">Start</span>
+                        <input type="date" id="ds-deadline-start" class="node-date-input" title="Start Date" max="9999-12-31">
+                        <input type="time" id="ds-deadline-start-time" class="node-date-input" style="max-width: 80px;" title="Start Time">
+                        <button id="ds-deadline-start-clear" class="clear-btn" title="Clear Start Date & Time">✕</button>
+                    </div>
+                    <div class="deadline-row-sep"></div>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <span class="deadline-row-label">End</span>
+                        <input type="date" id="ds-deadline-end" class="node-date-input" title="End Date" max="9999-12-31">
+                        <input type="time" id="ds-deadline-end-time" class="node-date-input" style="max-width: 80px;" title="End Time">
+                        <button id="ds-deadline-end-clear" class="clear-btn" title="Clear End Date & Time">✕</button>
+                    </div>
+                </div>
+            </div>
+
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; margin-bottom: 8px;">
                 <h3 style="font-size: 13px; color: var(--color-text-muted); text-transform: uppercase;">Description</h3>
                 <div style="display: flex; gap: 4px;">
@@ -243,8 +266,11 @@
             </div>
 
             <div style="margin-bottom: 16px;">
-                <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin-bottom: 10px;">
                     <input type="checkbox" id="ps-snap-toggle" style="width:16px; height:16px; cursor:pointer;"> Snap to Grid
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+                    <input type="checkbox" id="ps-snap-resize-toggle" style="width:16px; height:16px; cursor:pointer;"> Snap Resize to Grid
                 </label>
             </div>
 
@@ -254,6 +280,35 @@
                     <option value="bezier" selected>Bezier (Curve)</option>
                     <option value="orthogonal">Orthogonal (90°)</option>
                 </select>
+            </div>
+            
+            <div style="margin-bottom: 16px; border-top: 1px solid var(--color-surface-border); padding-top: 16px;">
+                <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Deadline Display</h4>
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin-bottom: 8px;">
+                    <input type="checkbox" id="ps-override-deadlines" style="width:16px; height:16px; cursor:pointer;"> Override Global Settings
+                </label>
+                <div id="ps-deadline-override-opts" style="display: none; padding-left: 12px; margin-top: 8px; border-left: 2px solid var(--color-surface-border);">
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin-bottom: 8px;">
+                        <input type="checkbox" id="ps-show-deadlines" style="width:16px; height:16px; cursor:pointer;"> Show Deadlines on Tasks
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin-bottom: 8px;">
+                        <input type="checkbox" id="ps-show-subtask-deadlines" style="width:16px; height:16px; cursor:pointer;"> Show on Subtasks
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin-bottom: 8px;">
+                        <input type="checkbox" id="ps-show-time-remaining" style="width:16px; height:16px; cursor:pointer;"> Show Time Remaining
+                    </label>
+                    <label style="font-size: 13px; display: block;">
+                        Days before 'Near' (Yellow):
+                        <input type="number" id="ps-near-deadline-days" min="0" max="30" value="3" style="width: 60px; padding: 4px; border-radius: 4px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none; margin-top: 4px;">
+                    </label>
+                    <label style="font-size: 13px; display: block; margin-top: 8px;">
+                        Deadline Emoji:
+                        <div style="display: flex; gap: 4px; margin-top: 4px;">
+                            <input type="text" id="ps-deadline-emoji" value="🕒" maxlength="4" style="width: 40px; padding: 4px; border-radius: 4px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none; text-align: center;">
+                            <button id="ps-deadline-emoji-apply" class="outline-btn" style="margin-top: 0; padding: 4px 8px; font-size: 11px;">Apply</button>
+                        </div>
+                    </label>
+                </div>
             </div>
         </div>
     </aside>
@@ -266,6 +321,7 @@
         </div>
         <div class="settings-tabs" style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--color-surface-border); padding-bottom: 8px;">
             <button class="settings-tab active" data-target="st-colors" style="background: none; border: none; color: var(--color-text-main); font-family: inherit; font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 4px;">Colors</button>
+            <button class="settings-tab" data-target="st-interface" style="background: none; border: none; color: var(--color-text-muted); font-family: inherit; font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 4px;">Interface</button>
             <button class="settings-tab" data-target="st-database" style="background: none; border: none; color: var(--color-text-muted); font-family: inherit; font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 4px;">Database</button>
         </div>
         <div class="settings-content" style="flex-grow: 1;">
@@ -279,6 +335,56 @@
                 </div>
                 <div id="sc-inputs" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-height: 300px; overflow-y: auto; padding-right: 8px;">
                     <!-- Color inputs will be injected here via JS -->
+                </div>
+            </div>
+            <div id="st-interface" class="settings-pane">
+                <h3 style="font-size: 14px; margin-bottom: 12px; font-weight: 500;">Interface Settings</h3>
+                <div style="margin-bottom: 20px;">
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin-bottom:16px;">
+                        <input type="checkbox" id="st-type-to-edit" style="width:16px; height:16px; cursor:pointer;" checked> Enable 'Type to Edit Title'
+                    </label>
+                </div>
+                
+                <h3 style="font-size: 14px; margin-bottom: 12px; font-weight: 500; border-top: 1px solid var(--color-surface-border); padding-top: 16px;">Global Deadlines</h3>
+                <div style="margin-bottom: 20px;">
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin-bottom: 8px;">
+                        <input type="checkbox" id="st-show-deadlines" style="width:16px; height:16px; cursor:pointer;" checked> Show Deadlines on Tasks
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin-bottom: 8px;">
+                        <input type="checkbox" id="st-show-subtask-deadlines" style="width:16px; height:16px; cursor:pointer;" checked> Show Deadlines on Subtasks
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin-bottom: 8px;">
+                        <input type="checkbox" id="st-show-time-remaining" style="width:16px; height:16px; cursor:pointer;"> Show Time Remaining
+                    </label>
+                    <label style="font-size: 13px; display: block;">
+                        Days before 'Near' (Yellow):
+                        <input type="number" id="st-near-deadline-days" min="0" max="30" value="3" style="width: 60px; padding: 4px; border-radius: 4px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none; margin-left: 8px;">
+                    </label>
+                    <label style="font-size: 13px; display: block; margin-top: 8px;">
+                        Deadline Emoji:
+                        <div style="display: flex; gap: 4px; margin-top: 4px;">
+                            <input type="text" id="st-deadline-emoji" value="🕒" maxlength="4" style="width: 40px; padding: 4px; border-radius: 4px; background: rgba(0,0,0,0.1); border: 1px solid var(--color-surface-border); color: inherit; font-family: inherit; outline: none; text-align: center;">
+                            <button id="st-deadline-emoji-apply" class="outline-btn" style="margin-top: 0; padding: 4px 8px; font-size: 11px;">Apply</button>
+                        </div>
+                    </label>
+                </div>
+                
+                <h3 style="font-size: 14px; margin-bottom: 12px; font-weight: 500; border-top: 1px solid var(--color-surface-border); padding-top: 16px;">Zoom Controls</h3>
+                <div style="margin-bottom: 20px;">
+                    <label style="font-size: 13px; display: block; margin-bottom: 8px; font-weight: 500;">HUD Size (Entire UI): <span id="hud-size-label" style="color: var(--color-accent-gold); font-weight: 600;">100%</span></label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button id="hud-decrease" class="icon-btn" style="border: 1px solid var(--color-surface-border); font-weight: bold; width: 36px; height: 36px; font-size: 16px;">-</button>
+                        <button id="hud-reset" class="text-btn" style="width: auto; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--color-surface-border); font-weight: 600; font-size: 13px;">100%</button>
+                        <button id="hud-increase" class="icon-btn" style="border: 1px solid var(--color-surface-border); font-weight: bold; width: 36px; height: 36px; font-size: 16px;">+</button>
+                    </div>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="font-size: 13px; display: block; margin-bottom: 8px; font-weight: 500;">Minimap Size: <span id="ms-size-label" style="color: var(--color-accent-gold); font-weight: 600;">100%</span></label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button id="ms-decrease" class="icon-btn" style="border: 1px solid var(--color-surface-border); font-weight: bold; width: 36px; height: 36px; font-size: 16px;">-</button>
+                        <button id="ms-reset" class="text-btn" style="width: auto; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--color-surface-border); font-weight: 600; font-size: 13px;">100%</button>
+                        <button id="ms-increase" class="icon-btn" style="border: 1px solid var(--color-surface-border); font-weight: bold; width: 36px; height: 36px; font-size: 16px;">+</button>
+                    </div>
                 </div>
             </div>
             <div id="st-database" class="settings-pane">

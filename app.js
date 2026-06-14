@@ -3,6 +3,15 @@ function generateId() {
     return Math.random().toString(36).substr(2, 9);
 }
 
+// Helper to determine canonical port pair key for grouping sibling edges
+function getEdgePortKey(e) {
+    const nodeA = e.source < e.target ? e.source : e.target;
+    const nodeB = e.source < e.target ? e.target : e.source;
+    const portA = e.source < e.target ? (e.sourcePort || 'auto') : (e.targetPort || 'auto');
+    const portB = e.source < e.target ? (e.targetPort || 'auto') : (e.sourcePort || 'auto');
+    return `${nodeA}:${portA}-${nodeB}:${portB}`;
+}
+
 // Global State
 let clipboardData = { nodes: [], edges: [] };
 let state = {
@@ -42,6 +51,9 @@ let uiState = {
     selectStart: { x: 0, y: 0 },
     isResizing: false,
     resizeNodeId: null,
+    resizeDirection: null,
+    resizeStartMouse: { x: 0, y: 0 },
+    resizeStartData: null,
     dragExtraIds: new Set(),
     draggedEdgeId: null,
     draggedEdgeType: null,
@@ -56,7 +68,8 @@ let uiState = {
     routingDragSegmentIndex: 0,
     routingDragPointsLength: 0,
     routingDragWpIdx1: -1,
-    routingDragWpIdx2: -1
+    routingDragWpIdx2: -1,
+    isDraggingMinimap: false
 };
 
 let canvasContextMenuLocation = { x: 0, y: 0 };
@@ -86,11 +99,15 @@ function init() {
     historyStack.push(JSON.stringify(state));
     historyIndex = 0;
     applyTheme(state.theme);
+    updateMinimapVisibility();
+    applyMinimapScale();
+    applyHudScale();
     renderPagesList();
     renderTemplatesList();
     renderBreadcrumbs();
     renderAll();
     setupEventListeners();
+    setupSidebarResizers();
     updateSidebarUI();
 }
 
@@ -123,13 +140,41 @@ function loadState() {
             state.edges = parsed.edges || [];
             state.templates = parsed.templates || [];
             state.settings = parsed.settings || { customColors: { light: {}, dark: {} } };
+            if (state.settings.minimapVisible === undefined) {
+                state.settings.minimapVisible = true;
+            }
+            if (state.settings.minimapScale === undefined) {
+                state.settings.minimapScale = 1;
+            }
+            if (state.settings.hudScale === undefined) {
+                state.settings.hudScale = 1;
+            }
+            if (state.settings.typeToEditTitle === undefined) {
+                state.settings.typeToEditTitle = true;
+            }
+            if (state.settings.showDeadlines === undefined) state.settings.showDeadlines = true;
+            if (state.settings.showSubtaskDeadlines === undefined) state.settings.showSubtaskDeadlines = true;
+            if (state.settings.nearDeadlineDays === undefined) state.settings.nearDeadlineDays = 3;
+            if (state.settings.showTimeRemaining === undefined) state.settings.showTimeRemaining = false;
+            if (state.settings.deadlineEmoji === undefined) state.settings.deadlineEmoji = '🕒';
+            
             
             if (parsed.pages && parsed.pages.length > 0) {
                 state.pages = parsed.pages.map(p => {
                     if (!p.settings) {
-                        p.settings = { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, routingMode: 'bezier' };
+                        p.settings = { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, snapResizeToGrid: false, routingMode: 'bezier' };
                     } else if (!p.settings.routingMode) {
                         p.settings.routingMode = 'bezier';
+                    }
+                    if (p.settings.overrideDeadlineSettings === undefined) {
+                        p.settings.overrideDeadlineSettings = false;
+                        p.settings.showDeadlines = true;
+                        p.settings.showSubtaskDeadlines = true;
+                        p.settings.nearDeadlineDays = 3;
+                        p.settings.showTimeRemaining = false;
+                    }
+                    if (p.settings.deadlineEmoji === undefined) {
+                        p.settings.deadlineEmoji = '🕒';
                     }
                     return p;
                 });
@@ -137,7 +182,7 @@ function loadState() {
                 state.pages = [{ 
                     id: 'default-page', 
                     title: 'Main Workspace',
-                    settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, routingMode: 'bezier' }
+                    settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, snapResizeToGrid: false, routingMode: 'bezier', overrideDeadlineSettings: false, showDeadlines: true, showSubtaskDeadlines: true, nearDeadlineDays: 3, deadlineEmoji: '🕒', showTimeRemaining: false }
                 }];
             }
             
@@ -165,10 +210,10 @@ function setupDefaultState() {
     state.pages = [{ 
         id: 'default-page', 
         title: 'Main Workspace',
-        settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, routingMode: 'bezier' }
+        settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, snapResizeToGrid: false, routingMode: 'bezier', overrideDeadlineSettings: false, showDeadlines: true, showSubtaskDeadlines: true, nearDeadlineDays: 3, deadlineEmoji: '🕒', showTimeRemaining: false }
     }];
     state.templates = [];
-    state.settings = { customColors: { light: {}, dark: {} } };
+    state.settings = { customColors: { light: {}, dark: {} }, minimapVisible: true, minimapScale: 1, hudScale: 1, typeToEditTitle: true, showDeadlines: true, showSubtaskDeadlines: true, nearDeadlineDays: 3, deadlineEmoji: '🕒', showTimeRemaining: false };
     uiState.activePageId = 'default-page';
 }
 
@@ -291,7 +336,7 @@ document.getElementById('btn-add-page').addEventListener('click', () => {
     const newPage = { 
         id: generateId(), 
         title: 'New Page',
-        settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, routingMode: 'bezier' }
+        settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, snapResizeToGrid: false, routingMode: 'bezier', overrideDeadlineSettings: false, showDeadlines: true, showSubtaskDeadlines: true, nearDeadlineDays: 3 }
     };
     state.pages.push(newPage);
     switchPage(newPage.id);
@@ -326,6 +371,87 @@ function renderAll() {
     renderMinimap(visibleNodes);
 }
 
+function resizeHandlesHTML(nodeId) {
+    return ['nw','ne','se','sw'].map(dir =>
+        `<div class="resize-handle" data-dir="${dir}" data-node="${nodeId}"></div>`
+    ).join('');
+}
+
+function formatDeadlineDate(isoDate) {
+    if (!isoDate) return '';
+    // isoDate is YYYY-MM-DD. Parse parts to avoid timezone issues.
+    const parts = isoDate.split('-');
+    if (parts.length !== 3) return isoDate;
+    let year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    // Clamp year to max 4 digits (max 9999)
+    if (year > 9999) year = 9999;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${day} ${months[month - 1]} ${year}`;
+}
+
+function clampDateInputYear(input) {
+    if (!input.value) return;
+    const parts = input.value.split('-');
+    if (parts.length === 3 && parts[0].length > 4) {
+        parts[0] = parts[0].slice(0, 4);
+        input.value = parts.join('-');
+    }
+}
+
+function getDeadlineColorEx(startStr, endStr, startTimeStr, endTimeStr, nearDays) {
+    if (!startStr && !endStr) return { color: 'var(--color-text-muted)', remainingStr: '' };
+    
+    const now = new Date();
+    const effectiveStartStr = startStr ? `${startStr}T${startTimeStr || '00:00'}:00` : null;
+    const effectiveEndStr = endStr ? `${endStr}T${endTimeStr || '23:59'}:59` : null;
+    
+    let targetDate = null;
+    let startDate = effectiveStartStr ? new Date(effectiveStartStr) : null;
+    let endDate = effectiveEndStr ? new Date(effectiveEndStr) : null;
+    
+    if (startDate && endDate) {
+        if (now < startDate) targetDate = startDate;
+        else targetDate = endDate;
+    } else {
+        targetDate = startDate || endDate;
+    }
+    
+    if (isNaN(targetDate.getTime())) return { color: 'var(--color-text-muted)', remainingStr: '' };
+    
+    const diffMs = targetDate - now;
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    const diffHours = diffMs / (1000 * 60 * 60);
+    const diffMins = diffMs / (1000 * 60);
+    
+    let remainingStr = '';
+    if (diffMs < 0) {
+        const absMins = Math.abs(diffMins);
+        if (absMins < 60) remainingStr = `${Math.floor(absMins)} mins overdue`;
+        else if (Math.abs(diffHours) < 24) remainingStr = `${Math.floor(Math.abs(diffHours))} hrs overdue`;
+        else remainingStr = `${Math.floor(Math.abs(diffDays))} days overdue`;
+    } else {
+        if (diffDays >= 1) remainingStr = `${Math.floor(diffDays)} days left`;
+        else if (diffHours >= 1) remainingStr = `${Math.floor(diffHours)} hrs left`;
+        else remainingStr = `${Math.floor(diffMins)} mins left`;
+    }
+
+    let color = 'var(--color-accent-green)';
+    if (diffMs < 0) {
+        color = 'var(--color-danger)';
+    } else if (startDate && endDate && now >= startDate && now <= endDate) {
+        color = 'var(--color-accent-gold)';
+    } else if (diffDays <= nearDays) {
+        color = '#eab308';
+    }
+    return { color, remainingStr };
+}
+
+function getDeadlineColor(startStr, endStr, nearDays) {
+    return getDeadlineColorEx(startStr, endStr, '', '', nearDays).color;
+}
+
 function renderNode(nodeData) {
     const el = document.createElement('div');
     el.className = `node node-type-${nodeData.type}`;
@@ -340,17 +466,72 @@ function renderNode(nodeData) {
     }
 
     el.style.transform = `translate(${nodeData.x}px, ${nodeData.y}px)`;
-    if (nodeData.width) el.style.width = `${nodeData.width}px`;
-    if (nodeData.height) el.style.height = `${nodeData.height}px`;
+    el.style.width = 'fit-content';
+    el.style.minWidth = nodeData.width ? `${nodeData.width}px` : '180px';
+    el.style.maxWidth = '800px';
+    
+    el.style.height = 'auto';
+    el.style.minHeight = nodeData.height ? `${nodeData.height}px` : '80px';
 
     let content = `
-        <div class="node-header" style="justify-content: ${nodeData.textAlign === 'left' ? 'flex-start' : nodeData.textAlign === 'right' ? 'flex-end' : 'center'}">
-            <span class="node-title" style="text-align: ${nodeData.textAlign || 'center'}; width: 100%; display: block;">${nodeData.title}</span>
+        <div style="width: 0; min-width: 100%;">
+            <div class="node-header" style="justify-content: ${nodeData.textAlign === 'left' ? 'flex-start' : nodeData.textAlign === 'right' ? 'flex-end' : 'center'}">
+                <span class="node-title" style="text-align: ${nodeData.textAlign || 'center'}; width: 100%; display: block;">${nodeData.title}</span>
+            </div>
         </div>
     `;
 
+    const page = state.pages.find(p => p.id === uiState.activePageId);
+    let effectiveShowDeadlines = state.settings.showDeadlines !== false;
+    let effectiveShowSubtaskDeadlines = state.settings.showSubtaskDeadlines !== false;
+    let effectiveShowTimeRemaining = state.settings.showTimeRemaining === true;
+    let nearDays = state.settings.nearDeadlineDays !== undefined ? state.settings.nearDeadlineDays : 3;
+    let deadlineEmoji = state.settings.deadlineEmoji || '🕒';
+    
+    if (page && page.settings && page.settings.overrideDeadlineSettings) {
+        effectiveShowDeadlines = page.settings.showDeadlines !== false;
+        effectiveShowSubtaskDeadlines = page.settings.showSubtaskDeadlines !== false;
+        effectiveShowTimeRemaining = page.settings.showTimeRemaining === true;
+        nearDays = page.settings.nearDeadlineDays !== undefined ? page.settings.nearDeadlineDays : 3;
+        deadlineEmoji = page.settings.deadlineEmoji || '🕒';
+    }
+
+    const colorData = getDeadlineColorEx(nodeData.deadlineStart, nodeData.deadlineEnd, nodeData.deadlineStartTime, nodeData.deadlineEndTime, nearDays);
+    const color = colorData.color;
+    
+    let remainingHtml = '';
+    // Independent check for time remaining
+    if (effectiveShowTimeRemaining && colorData.remainingStr) {
+        remainingHtml = `<div style="font-size: 11px; color: ${color}; border: 1px solid ${color}; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.1); white-space: nowrap; font-weight: 600; flex-shrink: 0; width: fit-content;">⏳ ${colorData.remainingStr}</div>`;
+    }
+    
+    // Independent check for deadlines
+    if (effectiveShowDeadlines && (nodeData.deadlineStart || nodeData.deadlineEnd)) {
+        let deadlineStr = '';
+        const tStart = nodeData.deadlineStartTime ? ` ${nodeData.deadlineStartTime}` : '';
+        const tEnd = nodeData.deadlineEndTime ? ` ${nodeData.deadlineEndTime}` : '';
+        const fStart = nodeData.deadlineStart ? formatDeadlineDate(nodeData.deadlineStart) : '';
+        const fEnd = nodeData.deadlineEnd ? formatDeadlineDate(nodeData.deadlineEnd) : '';
+        
+        if (nodeData.deadlineStart && nodeData.deadlineEnd) {
+            deadlineStr = `${fStart}${tStart} – ${fEnd}${tEnd}`;
+        } else {
+            deadlineStr = nodeData.deadlineStart ? `${fStart}${tStart}` : `${fEnd}${tEnd}`;
+        }
+        
+        content += `<div style="display: flex; gap: 6px; justify-content: center; align-items: center; margin-top: 6px; flex-wrap: nowrap; overflow: hidden; align-self: center;">
+            <div class="node-deadline" style="font-size: 11px; color: ${color}; border: 1px solid ${color}; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.1); white-space: nowrap; flex-shrink: 0; width: fit-content;">
+                ${deadlineEmoji} ${deadlineStr}
+            </div>
+            ${remainingHtml}
+        </div>`;
+    } else if (remainingHtml) {
+        content += `<div style="display: flex; justify-content: center; align-items: center; margin-top: 6px; align-self: center;">${remainingHtml}</div>`;
+    }
+
+
     if (nodeData.type === 'container') {
-        content += `<div class="resize-handle" data-node="${nodeData.id}"></div>`;
+        content += resizeHandlesHTML(nodeData.id);
         content += `
             <div class="port port-top" data-node="${nodeData.id}" data-port="top"></div>
             <div class="port port-right" data-node="${nodeData.id}" data-port="right"></div>
@@ -362,8 +543,7 @@ function renderNode(nodeData) {
         el.addEventListener('mousedown', (e) => {
             if (e.target.classList.contains('resize-handle')) {
                 e.stopPropagation();
-                uiState.isResizing = true;
-                uiState.resizeNodeId = nodeData.id;
+                startResize(e, nodeData.id, e.target.dataset.dir);
             } else if (!e.target.classList.contains('port')) {
                 startNodeDrag(e, nodeData.id);
             }
@@ -404,9 +584,32 @@ function renderNode(nodeData) {
 
     let subtasksHtml = '';
     if (nodeData.type === 'task') {
-        subtasksHtml = taskChildren.map(st => 
-            `<span class="sub-node-pill" style="${st.completed ? 'background:var(--color-accent-green); color:white;' : ''}">${st.title}</span>`
-        ).join('');
+        subtasksHtml = taskChildren.map(st => {
+            let stDeadline = '';
+            if (st.deadlineStart || st.deadlineEnd) {
+                const stColorData = getDeadlineColorEx(st.deadlineStart, st.deadlineEnd, st.deadlineStartTime, st.deadlineEndTime, nearDays);
+                const stColor = stColorData.color;
+
+                if (effectiveShowSubtaskDeadlines) {
+                    const tStart = st.deadlineStartTime ? ` ${st.deadlineStartTime}` : '';
+                    const tEnd = st.deadlineEndTime ? ` ${st.deadlineEndTime}` : '';
+                    const fStart = st.deadlineStart ? formatDeadlineDate(st.deadlineStart) : '';
+                    const fEnd = st.deadlineEnd ? formatDeadlineDate(st.deadlineEnd) : '';
+                    let stDeadlineStr = '';
+                    if (st.deadlineStart && st.deadlineEnd) {
+                        stDeadlineStr = `${fStart}${tStart} – ${fEnd}${tEnd}`;
+                    } else {
+                        stDeadlineStr = st.deadlineStart ? `${fStart}${tStart}` : `${fEnd}${tEnd}`;
+                    }
+                    stDeadline += `<span style="opacity: 0.9; margin-left: 6px; border: 1px solid ${stColor}; padding: 2px 4px; border-radius: 3px; color: ${stColor}; white-space: nowrap; flex-shrink: 0;">${deadlineEmoji} ${stDeadlineStr}</span>`;
+                }
+
+                if (effectiveShowTimeRemaining && stColorData.remainingStr) {
+                    stDeadline += `<span style="opacity: 0.9; margin-left: 4px; border: 1px solid ${stColor}; padding: 2px 4px; border-radius: 3px; color: ${stColor}; white-space: nowrap; font-weight: 600; flex-shrink: 0;">⏳ ${stColorData.remainingStr}</span>`;
+                }
+            }
+            return `<span class="sub-node-pill" style="${st.completed ? 'background:var(--color-accent-green); color:white;' : ''}">${st.title}${stDeadline}</span>`;
+        }).join('');
         if (infoChildren.length > 0) {
             subtasksHtml += `<span class="sub-node-pill" style="background: var(--color-accent-blue); color: #fff;">+ ${infoChildren.length} Info</span>`;
         }
@@ -418,10 +621,10 @@ function renderNode(nodeData) {
 
     if (nodeData.description && nodeData.description.trim() !== '') {
         let mdHtml = typeof marked !== 'undefined' ? marked.parse(nodeData.description) : nodeData.description;
-        content += `<div class="node-markdown markdown-body" style="margin-top: 8px; font-size: 11px; color: var(--color-text-muted); text-align: left; background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px;">${mdHtml}</div>`;
+        content += `<div style="width: 0; min-width: 100%;"><div class="node-markdown markdown-body" style="margin-top: 8px; font-size: 11px; color: var(--color-text-muted); text-align: left; background: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px;">${mdHtml}</div></div>`;
     }
 
-    content += `<div class="sub-nodes-container">${subtasksHtml}</div>`;
+    content += `<div style="width: 0; min-width: 100%;"><div class="sub-nodes-container">${subtasksHtml}</div></div>`;
     
     content += `
         <div class="port port-top" data-node="${nodeData.id}" data-port="top"></div>
@@ -429,11 +632,17 @@ function renderNode(nodeData) {
         <div class="port port-bottom" data-node="${nodeData.id}" data-port="bottom"></div>
         <div class="port port-left" data-node="${nodeData.id}" data-port="left"></div>
     `;
+    content += resizeHandlesHTML(nodeData.id);
 
     el.innerHTML = content;
     
     el.addEventListener('mousedown', (e) => {
-        if (!e.target.classList.contains('port')) startNodeDrag(e, nodeData.id);
+        if (e.target.classList.contains('resize-handle')) {
+            e.stopPropagation();
+            startResize(e, nodeData.id, e.target.dataset.dir);
+        } else if (!e.target.classList.contains('port')) {
+            startNodeDrag(e, nodeData.id);
+        }
     });
     
     el.addEventListener('dblclick', (e) => {
@@ -819,10 +1028,30 @@ function renderEdge(edgeData) {
         labelY = pt.y;
     } else {
         const curve = Math.max(dist * 0.5, 80);
-        const c1x = sPort.x + sPort.dir.x * curve;
-        const c1y = sPort.y + sPort.dir.y * curve;
-        const c2x = tPort.x + tPort.dir.x * curve;
-        const c2y = tPort.y + tPort.dir.y * curve;
+        let c1x = sPort.x + sPort.dir.x * curve;
+        let c1y = sPort.y + sPort.dir.y * curve;
+        let c2x = tPort.x + tPort.dir.x * curve;
+        let c2y = tPort.y + tPort.dir.y * curve;
+
+        const key = getEdgePortKey(edgeData);
+        const siblings = state.edges.filter(e => getEdgePortKey(e) === key);
+        if (siblings.length > 1) {
+            siblings.sort((a, b) => a.id.localeCompare(b.id));
+            const index = siblings.findIndex(e => e.id === edgeData.id);
+            const count = siblings.length;
+            
+            const step = 40;
+            const mid = (count - 1) / 2;
+            const offsetValue = (index - mid) * step;
+            
+            const nx = -dy / (dist || 1);
+            const ny = dx / (dist || 1);
+            
+            c1x += nx * offsetValue;
+            c1y += ny * offsetValue;
+            c2x += nx * offsetValue;
+            c2y += ny * offsetValue;
+        }
 
         const mt = 1 - t, mt2 = mt * mt, mt3 = mt2 * mt;
         const t2 = t * t, t3 = t2 * t;
@@ -968,7 +1197,20 @@ function getEdgeWaypoints(edgeData, sPort, tPort) {
     const p2_enter = { x: tPort.x + tPort.dir.x * buffer, y: tPort.y + tPort.dir.y * buffer };
 
     let waypoints = [];
-    const offset = (edgeData && edgeData.routingOffset) || 0;
+    let offset = (edgeData && edgeData.routingOffset) || 0;
+    if (offset === 0 && edgeData) {
+        const key = getEdgePortKey(edgeData);
+        const siblings = state.edges.filter(e => getEdgePortKey(e) === key);
+        if (siblings.length > 1) {
+            siblings.sort((a, b) => a.id.localeCompare(b.id));
+            const index = siblings.findIndex(e => e.id === edgeData.id);
+            const count = siblings.length;
+            
+            const step = 40;
+            const mid = (count - 1) / 2;
+            offset = (index - mid) * step;
+        }
+    }
     if (sPort.dir.x !== 0) {
         if (tPort.dir.x !== 0) {
             const midX = (p1_exit.x + p2_enter.x) / 2 + offset;
@@ -1092,16 +1334,134 @@ function createSVGPath(p1, p2, edgeData) {
     const dist = Math.sqrt(dx*dx + dy*dy);
     const curve = Math.max(dist * 0.5, 80);
     
-    const c1x = p1.x + p1.dir.x * curve;
-    const c1y = p1.y + p1.dir.y * curve;
+    let c1x = p1.x + p1.dir.x * curve;
+    let c1y = p1.y + p1.dir.y * curve;
     
-    const c2x = p2.x + p2.dir.x * curve;
-    const c2y = p2.y + p2.dir.y * curve;
+    let c2x = p2.x + p2.dir.x * curve;
+    let c2y = p2.y + p2.dir.y * curve;
+    
+    if (edgeData) {
+        const key = getEdgePortKey(edgeData);
+        const siblings = state.edges.filter(e => getEdgePortKey(e) === key);
+        if (siblings.length > 1) {
+            siblings.sort((a, b) => a.id.localeCompare(b.id));
+            const index = siblings.findIndex(e => e.id === edgeData.id);
+            const count = siblings.length;
+            
+            const step = 40; // spacing between curves
+            const mid = (count - 1) / 2;
+            const offsetValue = (index - mid) * step;
+            
+            const nx = -dy / (dist || 1);
+            const ny = dx / (dist || 1);
+            
+            c1x += nx * offsetValue;
+            c1y += ny * offsetValue;
+            c2x += nx * offsetValue;
+            c2y += ny * offsetValue;
+        }
+    }
     
     return `M ${p1.x} ${p1.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
 }
 
 // Minimap
+function updateMinimapVisibility() {
+    const minimapContainer = document.getElementById('minimap-container');
+    const minimapToggleBtn = document.getElementById('minimap-toggle');
+    if (!minimapContainer || !minimapToggleBtn) return;
+
+    if (state.settings.minimapVisible !== false) {
+        minimapContainer.classList.remove('collapsed');
+        minimapToggleBtn.classList.add('active');
+    } else {
+        minimapContainer.classList.add('collapsed');
+        minimapToggleBtn.classList.remove('active');
+    }
+}
+
+function applyHudScale() {
+    const scale = state.settings.hudScale || 1;
+    document.documentElement.style.setProperty('--hud-scale', scale);
+    
+    // Refresh label in modal if open
+    const label = document.getElementById('hud-size-label');
+    const pct = Math.round(scale * 100) + '%';
+    if (label) label.textContent = pct;
+}
+
+function applyMinimapScale() {
+    const scale = state.settings.minimapScale || 1;
+    const baseW = 200, baseH = 150;
+    const w = Math.round(baseW * scale);
+    const h = Math.round(baseH * scale);
+    const container = document.getElementById('minimap-container');
+    if (container) {
+        container.style.width = w + 'px';
+        container.style.height = h + 'px';
+    }
+    // Refresh label in modal if open
+    const label = document.getElementById('ms-size-label');
+    const pct = Math.round(scale * 100) + '%';
+    if (label) label.textContent = pct;
+    // Re-render minimap with new dimensions
+    const visibleNodes = state.nodes.filter(n => n.parentId === uiState.currentCanvasId && n.pageId === uiState.activePageId);
+    renderMinimap(visibleNodes);
+}
+
+function getMinimapMetrics() {
+    const visibleNodes = state.nodes.filter(n => n.parentId === uiState.currentCanvasId && n.pageId === uiState.activePageId);
+    if (visibleNodes.length === 0) return null;
+    
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    visibleNodes.forEach(n => {
+        const nodeEl = document.getElementById(`node-${n.id}`);
+        const w = nodeEl ? nodeEl.offsetWidth : (n.width || (n.type === 'container' ? 400 : 180));
+        const h = nodeEl ? nodeEl.offsetHeight : (n.height || (n.type === 'container' ? 300 : 80));
+        
+        minX = Math.min(minX, n.x);
+        minY = Math.min(minY, n.y);
+        maxX = Math.max(maxX, n.x + w);
+        maxY = Math.max(maxY, n.y + h);
+    });
+    
+    minX -= 400; minY -= 400; maxX += 400; maxY += 400;
+    
+    const container = document.getElementById('minimap-container');
+    const mmW = container ? container.offsetWidth : 200;
+    const mmH = container ? container.offsetHeight : 150;
+    const mapWidth = maxX - minX;
+    const mapHeight = maxY - minY;
+    const scale = Math.min(mmW / mapWidth, mmH / mapHeight);
+    
+    const vpW = (window.innerWidth / uiState.zoom) * scale;
+    const vpH = (window.innerHeight / uiState.zoom) * scale;
+    
+    return { minX, minY, scale, vpW, vpH, mmW, mmH };
+}
+
+function panCanvasToMinimapPosition(clientX, clientY) {
+    const metrics = getMinimapMetrics();
+    if (!metrics) return;
+    
+    const container = document.getElementById('minimap-container');
+    const rect = container.getBoundingClientRect();
+    
+    // Clamp mouse positions to within the actual minimap boundaries
+    const mouseX = Math.max(0, Math.min(clientX - rect.left, metrics.mmW));
+    const mouseY = Math.max(0, Math.min(clientY - rect.top, metrics.mmH));
+    
+    // Center the viewport at the mouse position
+    const vpX = mouseX - metrics.vpW / 2;
+    const vpY = mouseY - metrics.vpH / 2;
+    
+    // Convert back to canvasOffset
+    uiState.canvasOffset.x = -(vpX / metrics.scale + metrics.minX) * uiState.zoom;
+    uiState.canvasOffset.y = -(vpY / metrics.scale + metrics.minY) * uiState.zoom;
+    
+    renderAll();
+}
+
 function renderMinimap(visibleNodes) {
     minimapContent.innerHTML = '';
     if (visibleNodes.length === 0) {
@@ -1112,25 +1472,40 @@ function renderMinimap(visibleNodes) {
     
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     visibleNodes.forEach(n => {
+        const nodeEl = document.getElementById(`node-${n.id}`);
+        const w = nodeEl ? nodeEl.offsetWidth : (n.width || (n.type === 'container' ? 400 : 180));
+        const h = nodeEl ? nodeEl.offsetHeight : (n.height || (n.type === 'container' ? 300 : 80));
+        
         minX = Math.min(minX, n.x);
         minY = Math.min(minY, n.y);
-        maxX = Math.max(maxX, n.x + 180);
-        maxY = Math.max(maxY, n.y + 80);
+        maxX = Math.max(maxX, n.x + w);
+        maxY = Math.max(maxY, n.y + h);
     });
     
     minX -= 400; minY -= 400; maxX += 400; maxY += 400;
     
+    const mmContainer = document.getElementById('minimap-container');
+    const mmW = mmContainer ? mmContainer.offsetWidth : 200;
+    const mmH = mmContainer ? mmContainer.offsetHeight : 150;
     const mapWidth = maxX - minX;
     const mapHeight = maxY - minY;
-    const scale = Math.min(200 / mapWidth, 150 / mapHeight);
+    const scale = Math.min(mmW / mapWidth, mmH / mapHeight);
     
     visibleNodes.forEach(n => {
+        const nodeEl = document.getElementById(`node-${n.id}`);
+        const w = nodeEl ? nodeEl.offsetWidth : (n.width || (n.type === 'container' ? 400 : 180));
+        const h = nodeEl ? nodeEl.offsetHeight : (n.height || (n.type === 'container' ? 300 : 80));
+        
         const el = document.createElement('div');
-        el.className = `minimap-node ${n.type}`;
+        el.className = `minimap-node node-type-${n.type}`;
+        if (n.completed) el.classList.add('completed-node');
+        if (n.color) el.classList.add(`color-theme-${n.color}`);
+        if (uiState.selectedNodeIds.has(n.id)) el.classList.add('selected');
+        
         el.style.left = (n.x - minX) * scale + 'px';
         el.style.top = (n.y - minY) * scale + 'px';
-        el.style.width = 180 * scale + 'px';
-        el.style.height = 80 * scale + 'px';
+        el.style.width = w * scale + 'px';
+        el.style.height = h * scale + 'px';
         minimapContent.appendChild(el);
     });
     
@@ -1210,7 +1585,7 @@ function setupEventListeners() {
     document.getElementById('toggle-sidebar-left').addEventListener('click', () => {
         sidebarLeft.classList.toggle('collapsed');
         if (sidebarLeft.classList.contains('collapsed')) {
-            document.getElementById('zoom-controls').style.left = '80px';
+            document.getElementById('zoom-controls').style.left = '20px';
         } else {
             document.getElementById('zoom-controls').style.left = '300px';
         }
@@ -1229,37 +1604,64 @@ function setupEventListeners() {
     document.getElementById('zoom-out').onclick = () => setZoom(uiState.zoom - 0.1);
     document.getElementById('zoom-reset').onclick = () => { uiState.canvasOffset = {x:0,y:0}; setZoom(1); };
 
-    document.getElementById('minimap-container').addEventListener('click', () => {
-        const visibleNodes = state.nodes.filter(n => n.parentId === uiState.currentCanvasId && n.pageId === uiState.activePageId);
-        if (visibleNodes.length === 0) {
-            uiState.canvasOffset = {x:0, y:0};
-            setZoom(1);
-            return;
-        }
+    const minimapToggle = document.getElementById('minimap-toggle');
+    if (minimapToggle) {
+        minimapToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            state.settings.minimapVisible = state.settings.minimapVisible !== false ? false : true;
+            saveState();
+            updateMinimapVisibility();
+        });
+    }
 
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        visibleNodes.forEach(n => {
-            minX = Math.min(minX, n.x);
-            minY = Math.min(minY, n.y);
-            maxX = Math.max(maxX, n.x + 180);
-            maxY = Math.max(maxY, n.y + 80);
+    const minimapContainer = document.getElementById('minimap-container');
+    if (minimapContainer) {
+        minimapContainer.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uiState.isDraggingMinimap = true;
+            const vp = document.getElementById('minimap-viewport');
+            if (vp) vp.classList.add('dragging');
+            panCanvasToMinimapPosition(e.clientX, e.clientY);
         });
 
-        const padding = 100;
-        const width = maxX - minX + padding * 2;
-        const height = maxY - minY + padding * 2;
+        minimapContainer.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            const visibleNodes = state.nodes.filter(n => n.parentId === uiState.currentCanvasId && n.pageId === uiState.activePageId);
+            if (visibleNodes.length === 0) {
+                uiState.canvasOffset = {x:0, y:0};
+                setZoom(1);
+                return;
+            }
 
-        const scaleX = window.innerWidth / width;
-        const scaleY = window.innerHeight / height;
-        const newZoom = Math.max(0.1, Math.min(scaleX, scaleY, 1)); 
-        
-        uiState.canvasOffset = {
-            x: window.innerWidth / 2 - ((minX + maxX) / 2) * newZoom,
-            y: window.innerHeight / 2 - ((minY + maxY) / 2) * newZoom
-        };
-        
-        setZoom(newZoom);
-    });
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            visibleNodes.forEach(n => {
+                const nodeEl = document.getElementById(`node-${n.id}`);
+                const w = nodeEl ? nodeEl.offsetWidth : (n.width || (n.type === 'container' ? 400 : 180));
+                const h = nodeEl ? nodeEl.offsetHeight : (n.height || (n.type === 'container' ? 300 : 80));
+                
+                minX = Math.min(minX, n.x);
+                minY = Math.min(minY, n.y);
+                maxX = Math.max(maxX, n.x + w);
+                maxY = Math.max(maxY, n.y + h);
+            });
+
+            const padding = 100;
+            const width = maxX - minX + padding * 2;
+            const height = maxY - minY + padding * 2;
+
+            const scaleX = window.innerWidth / width;
+            const scaleY = window.innerHeight / height;
+            const newZoom = Math.max(0.1, Math.min(scaleX, scaleY, 1)); 
+            
+            uiState.canvasOffset = {
+                x: window.innerWidth / 2 - ((minX + maxX) / 2) * newZoom,
+                y: window.innerHeight / 2 - ((minY + maxY) / 2) * newZoom
+            };
+            
+            setZoom(newZoom);
+        });
+    }
 
     workspace.addEventListener('wheel', (e) => {
         if (e.ctrlKey) {
@@ -1357,14 +1759,81 @@ function setupEventListeners() {
         }
     });
 
+    window.addEventListener('keydown', (e) => {
+        // "Type to edit title" feature
+        if (uiState.selectedNodeIds.size === 1 && state.settings.typeToEditTitle !== false) {
+            const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+            const isTyping = activeTag === 'input' || activeTag === 'textarea' || document.activeElement.isContentEditable;
+            
+            if (!isTyping) {
+                // Single character keys, excluding control shortcuts
+                if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    const dsTitle = document.getElementById('ds-title');
+                    if (dsTitle) {
+                        dsTitle.focus();
+                        dsTitle.textContent = e.key;
+                        updateActiveNodeFromUI();
+                        
+                        // Place cursor at the end
+                        const range = document.createRange();
+                        const sel = window.getSelection();
+                        range.selectNodeContents(dsTitle);
+                        range.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                        
+                        e.preventDefault();
+                    }
+                }
+            }
+        }
+    });
+
     window.addEventListener('mousemove', (e) => {
-        if (uiState.isResizing) {
-            const dx = e.movementX / uiState.zoom;
-            const dy = e.movementY / uiState.zoom;
+        if (uiState.isDraggingMinimap) {
+            panCanvasToMinimapPosition(e.clientX, e.clientY);
+        } else if (uiState.isResizing) {
             const node = state.nodes.find(n => n.id === uiState.resizeNodeId);
-            if (node) {
-                node.width = Math.max(100, (node.width || 180) + dx);
-                node.height = Math.max(80, (node.height || 80) + dy);
+            if (node && uiState.resizeStartData) {
+                const rawDx = (e.clientX - uiState.resizeStartMouse.x) / uiState.zoom;
+                const rawDy = (e.clientY - uiState.resizeStartMouse.y) / uiState.zoom;
+                const { x: ox, y: oy, width: ow, height: oh } = uiState.resizeStartData;
+                const dir = uiState.resizeDirection;
+                const MIN_W = 80, MIN_H = 50;
+
+                let nx = ox, ny = oy, nw = ow, nh = oh;
+
+                // Horizontal component
+                if (dir.includes('e')) { nw = Math.max(MIN_W, ow + rawDx); }
+                if (dir.includes('w')) { const dw = Math.min(rawDx, ow - MIN_W); nw = ow - dw; nx = ox + dw; }
+
+                // Vertical component
+                if (dir.includes('s')) { nh = Math.max(MIN_H, oh + rawDy); }
+                if (dir.includes('n')) { const dh = Math.min(rawDy, oh - MIN_H); nh = oh - dh; ny = oy + dh; }
+
+                const page = state.pages.find(p => p.id === uiState.activePageId);
+                if (page && page.settings && page.settings.snapResizeToGrid) {
+                    const gridSize = page.settings.gridSize || 40;
+                    if (dir.includes('e')) {
+                        nw = Math.max(MIN_W, Math.round((nx + nw) / gridSize) * gridSize - nx);
+                    }
+                    if (dir.includes('w')) {
+                        const rightEdge = nx + nw;
+                        nx = Math.round(nx / gridSize) * gridSize;
+                        nw = Math.max(MIN_W, rightEdge - nx);
+                    }
+                    if (dir.includes('s')) {
+                        nh = Math.max(MIN_H, Math.round((ny + nh) / gridSize) * gridSize - ny);
+                    }
+                    if (dir.includes('n')) {
+                        const bottomEdge = ny + nh;
+                        ny = Math.round(ny / gridSize) * gridSize;
+                        nh = Math.max(MIN_H, bottomEdge - ny);
+                    }
+                }
+
+                node.x = nx; node.y = ny;
+                node.width = nw; node.height = nh;
                 renderAll();
             }
         } else if (uiState.isDraggingRoutingHandle) {
@@ -1488,10 +1957,30 @@ function setupEventListeners() {
                 const dy = tPort.y - sPort.y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
                 const curve = Math.max(dist * 0.5, 80);
-                const c1x = sPort.x + sPort.dir.x * curve;
-                const c1y = sPort.y + sPort.dir.y * curve;
-                const c2x = tPort.x + tPort.dir.x * curve;
-                const c2y = tPort.y + tPort.dir.y * curve;
+                let c1x = sPort.x + sPort.dir.x * curve;
+                let c1y = sPort.y + sPort.dir.y * curve;
+                let c2x = tPort.x + tPort.dir.x * curve;
+                let c2y = tPort.y + tPort.dir.y * curve;
+                
+                const key = getEdgePortKey(edge);
+                const siblings = state.edges.filter(e => getEdgePortKey(e) === key);
+                if (siblings.length > 1) {
+                    siblings.sort((a, b) => a.id.localeCompare(b.id));
+                    const index = siblings.findIndex(e => e.id === edge.id);
+                    const count = siblings.length;
+                    
+                    const step = 40;
+                    const mid = (count - 1) / 2;
+                    const offsetValue = (index - mid) * step;
+                    
+                    const nx = -dy / (dist || 1);
+                    const ny = dx / (dist || 1);
+                    
+                    c1x += nx * offsetValue;
+                    c1y += ny * offsetValue;
+                    c2x += nx * offsetValue;
+                    c2y += ny * offsetValue;
+                }
                 
                 const mx = (e.clientX - uiState.canvasOffset.x) / uiState.zoom;
                 const my = (e.clientY - uiState.canvasOffset.y) / uiState.zoom;
@@ -1535,14 +2024,23 @@ function setupEventListeners() {
     });
 
     window.addEventListener('mouseup', () => {
+        if (uiState.isDraggingMinimap) {
+            uiState.isDraggingMinimap = false;
+            const vp = document.getElementById('minimap-viewport');
+            if (vp) vp.classList.remove('dragging');
+            saveState();
+        }
         if (uiState.isDraggingRoutingHandle) {
             uiState.isDraggingRoutingHandle = false;
             uiState.draggedEdgeId = null;
             saveState();
         }
         if (uiState.isResizing) {
+            document.body.classList.remove(`is-resizing-${uiState.resizeDirection}`);
             uiState.isResizing = false;
             uiState.resizeNodeId = null;
+            uiState.resizeDirection = null;
+            uiState.resizeStartData = null;
             saveState();
         }
         if (uiState.isDraggingNode) {
@@ -1651,9 +2149,10 @@ function setupEventListeners() {
                 y: (e.clientY - rect.top - uiState.canvasOffset.y) / uiState.zoom - 40
             };
             
+            const scale = state.settings.hudScale || 1;
             contextMenu.style.display = 'flex';
-            contextMenu.style.left = e.clientX + 'px';
-            contextMenu.style.top = e.clientY + 'px';
+            contextMenu.style.left = (e.clientX / scale) + 'px';
+            contextMenu.style.top = (e.clientY / scale) + 'px';
         }
     });
 
@@ -1684,6 +2183,49 @@ function setupEventListeners() {
         descTextarea.addEventListener('input', updateActiveNodeFromUI);
     } else {
         document.getElementById('ds-description').addEventListener('input', updateActiveNodeFromUI);
+    }
+    
+    const dateInputHandler = (inputId) => {
+        const el = document.getElementById(inputId);
+        if (el) {
+            el.oninput = () => { clampDateInputYear(el); updateActiveNodeFromUI(); };
+            el.onchange = () => { clampDateInputYear(el); updateActiveNodeFromUI(); };
+        }
+    };
+    dateInputHandler('ds-deadline-start');
+    dateInputHandler('ds-deadline-end');
+    
+    const startTimeInput = document.getElementById('ds-deadline-start-time');
+    const endTimeInput = document.getElementById('ds-deadline-end-time');
+    if (startTimeInput) {
+        startTimeInput.oninput = updateActiveNodeFromUI;
+        startTimeInput.onchange = updateActiveNodeFromUI;
+    }
+    if (endTimeInput) {
+        endTimeInput.oninput = updateActiveNodeFromUI;
+        endTimeInput.onchange = updateActiveNodeFromUI;
+    }
+
+    // Bind Clear buttons for deadlines
+    const startClearBtn = document.getElementById('ds-deadline-start-clear');
+    if (startClearBtn) {
+        startClearBtn.onclick = () => {
+            const dateEl = document.getElementById('ds-deadline-start');
+            const timeEl = document.getElementById('ds-deadline-start-time');
+            if (dateEl) dateEl.value = '';
+            if (timeEl) timeEl.value = '';
+            updateActiveNodeFromUI();
+        };
+    }
+    const endClearBtn = document.getElementById('ds-deadline-end-clear');
+    if (endClearBtn) {
+        endClearBtn.onclick = () => {
+            const dateEl = document.getElementById('ds-deadline-end');
+            const timeEl = document.getElementById('ds-deadline-end-time');
+            if (dateEl) dateEl.value = '';
+            if (timeEl) timeEl.value = '';
+            updateActiveNodeFromUI();
+        };
     }
     
     document.querySelectorAll('.align-btn').forEach(btn => {
@@ -1794,6 +2336,14 @@ function setupEventListeners() {
         }
     });
 
+    document.getElementById('ps-snap-resize-toggle').addEventListener('change', (e) => {
+        const page = state.pages.find(p => p.id === uiState.activePageId);
+        if (page) {
+            page.settings.snapResizeToGrid = e.target.checked;
+            saveState();
+        }
+    });
+
     document.getElementById('ps-edge-routing').addEventListener('change', (e) => {
         const page = state.pages.find(p => p.id === uiState.activePageId);
         if (page) {
@@ -1802,6 +2352,40 @@ function setupEventListeners() {
             renderAll();
         }
     });
+
+    document.getElementById('ps-override-deadlines').addEventListener('change', (e) => {
+        const page = state.pages.find(p => p.id === uiState.activePageId);
+        if (page) {
+            page.settings.overrideDeadlineSettings = e.target.checked;
+            document.getElementById('ps-deadline-override-opts').style.display = e.target.checked ? 'block' : 'none';
+            saveState();
+            renderAll();
+        }
+    });
+    document.getElementById('ps-show-deadlines').addEventListener('change', (e) => {
+        const page = state.pages.find(p => p.id === uiState.activePageId);
+        if (page) { page.settings.showDeadlines = e.target.checked; saveState(); renderAll(); }
+    });
+    document.getElementById('ps-show-subtask-deadlines').addEventListener('change', (e) => {
+        const page = state.pages.find(p => p.id === uiState.activePageId);
+        if (page) { page.settings.showSubtaskDeadlines = e.target.checked; saveState(); renderAll(); }
+    });
+    document.getElementById('ps-show-time-remaining').addEventListener('change', (e) => {
+        const page = state.pages.find(p => p.id === uiState.activePageId);
+        if (page) { page.settings.showTimeRemaining = e.target.checked; saveState(); renderAll(); }
+    });
+    document.getElementById('ps-near-deadline-days').addEventListener('change', (e) => {
+        const page = state.pages.find(p => p.id === uiState.activePageId);
+        if (page) { page.settings.nearDeadlineDays = parseInt(e.target.value) || 0; saveState(); renderAll(); }
+    });
+    const psEmojiApply = document.getElementById('ps-deadline-emoji-apply');
+    if (psEmojiApply) {
+        psEmojiApply.addEventListener('click', () => {
+            const page = state.pages.find(p => p.id === uiState.activePageId);
+            const input = document.getElementById('ps-deadline-emoji');
+            if (page && input) { page.settings.deadlineEmoji = input.value || '🕒'; saveState(); renderAll(); }
+        });
+    }
 
     document.getElementById('ds-add-nested-task').addEventListener('click', () => addNestedNodeToUI('task'));
     document.getElementById('ds-add-nested-info').addEventListener('click', () => addNestedNodeToUI('info'));
@@ -1904,6 +2488,25 @@ function addNodeAtLocation(type) {
     closeContextMenu();
 }
 
+function startResize(e, id, dir) {
+    e.stopPropagation();
+    e.preventDefault();
+    const node = state.nodes.find(n => n.id === id);
+    if (!node) return;
+    const el = document.getElementById(`node-${id}`);
+    uiState.isResizing = true;
+    uiState.resizeNodeId = id;
+    uiState.resizeDirection = dir;
+    uiState.resizeStartMouse = { x: e.clientX, y: e.clientY };
+    uiState.resizeStartData = {
+        x: node.x,
+        y: node.y,
+        width: el ? el.offsetWidth : (node.width || 180),
+        height: el ? el.offsetHeight : (node.height || 80)
+    };
+    document.body.classList.add(`is-resizing-${dir}`);
+}
+
 function startNodeDrag(e, id) {
     e.stopPropagation();
     uiState.isDraggingNode = true;
@@ -1977,25 +2580,19 @@ function finishConnection(e, id, port = 'auto') {
                 shouldRender = true;
             }
         } else {
-            const exists = state.edges.some(ed => 
-                (ed.source === uiState.connectSourceId && ed.target === id) ||
-                (ed.source === id && ed.target === uiState.connectSourceId)
-            );
-            if (!exists) {
-                state.edges.push({ 
-                    id: generateId(), 
-                    source: uiState.connectSourceId, 
-                    target: id, 
-                    sourcePort: uiState.connectSourcePort || 'auto',
-                    targetPort: port || 'auto',
-                    color: 'gold', 
-                    lineStyle: 'solid', 
-                    arrowStart: false, 
-                    arrowEnd: true 
-                });
-                saveState();
-                shouldRender = true;
-            }
+            state.edges.push({ 
+                id: generateId(), 
+                source: uiState.connectSourceId, 
+                target: id, 
+                sourcePort: uiState.connectSourcePort || 'auto',
+                targetPort: port || 'auto',
+                color: 'gold', 
+                lineStyle: 'solid', 
+                arrowStart: false, 
+                arrowEnd: true 
+            });
+            saveState();
+            shouldRender = true;
         }
     }
     
@@ -2097,9 +2694,10 @@ function showContextMenu(e, id) {
     document.getElementById('cm-add-container').style.display = 'none';
     document.getElementById('cm-delete').style.display = 'block';
     
+    const scale = state.settings.hudScale || 1;
     contextMenu.style.display = 'flex';
-    contextMenu.style.left = e.clientX + 'px';
-    contextMenu.style.top = e.clientY + 'px';
+    contextMenu.style.left = (e.clientX / scale) + 'px';
+    contextMenu.style.top = (e.clientY / scale) + 'px';
     const groupBtn = document.getElementById('cm-group');
     groupBtn.style.display = uiState.selectedNodeIds.size > 1 ? 'block' : 'none';
 
@@ -2134,9 +2732,10 @@ function showEdgeContextMenu(e, edgeId) {
     document.getElementById('cm-save-template').style.display = 'none';
     document.getElementById('cm-delete').style.display = 'block';
     
+    const scale = state.settings.hudScale || 1;
     contextMenu.style.display = 'flex';
-    contextMenu.style.left = e.clientX + 'px';
-    contextMenu.style.top = e.clientY + 'px';
+    contextMenu.style.left = (e.clientX / scale) + 'px';
+    contextMenu.style.top = (e.clientY / scale) + 'px';
 }
 
 function closeContextMenu() {
@@ -2311,6 +2910,11 @@ function updateSidebarUI() {
             }
             document.getElementById('ds-title').setAttribute('contenteditable', 'true');
             
+            document.getElementById('ds-deadline-start').value = node.deadlineStart || '';
+            document.getElementById('ds-deadline-end').value = node.deadlineEnd || '';
+            document.getElementById('ds-deadline-start-time').value = node.deadlineStartTime || '';
+            document.getElementById('ds-deadline-end-time').value = node.deadlineEndTime || '';
+            
             document.querySelectorAll('#ds-node-color-palette .color-btn').forEach(btn => {
                 btn.classList.toggle('selected', btn.dataset.color === node.color);
             });
@@ -2332,7 +2936,21 @@ function updateSidebarUI() {
             document.getElementById('ps-default-align').value = activePage.settings.defaultAlignment;
             document.getElementById('ps-grid-size').value = activePage.settings.gridSize;
             document.getElementById('ps-snap-toggle').checked = activePage.settings.snapToGrid;
+            document.getElementById('ps-snap-resize-toggle').checked = activePage.settings.snapResizeToGrid || false;
             document.getElementById('ps-edge-routing').value = activePage.settings.routingMode || 'bezier';
+            
+            const psOverride = document.getElementById('ps-override-deadlines');
+            const psOpts = document.getElementById('ps-deadline-override-opts');
+            if (psOverride && psOpts) {
+                psOverride.checked = !!activePage.settings.overrideDeadlineSettings;
+                psOpts.style.display = activePage.settings.overrideDeadlineSettings ? 'block' : 'none';
+                document.getElementById('ps-show-deadlines').checked = activePage.settings.showDeadlines !== false;
+                document.getElementById('ps-show-subtask-deadlines').checked = activePage.settings.showSubtaskDeadlines !== false;
+                document.getElementById('ps-show-time-remaining').checked = activePage.settings.showTimeRemaining === true;
+                document.getElementById('ps-near-deadline-days').value = activePage.settings.nearDeadlineDays !== undefined ? activePage.settings.nearDeadlineDays : 3;
+                const psEmojiInput = document.getElementById('ps-deadline-emoji');
+                if (psEmojiInput) psEmojiInput.value = activePage.settings.deadlineEmoji || '🕒';
+            }
         }
     }
 
@@ -2355,6 +2973,11 @@ function updateActiveNodeFromUI() {
     if (node) {
         node.title = document.getElementById('ds-title').innerText;
         node.description = document.getElementById('ds-description').value;
+        node.deadlineStart = document.getElementById('ds-deadline-start').value;
+        node.deadlineEnd = document.getElementById('ds-deadline-end').value;
+        node.deadlineStartTime = document.getElementById('ds-deadline-start-time').value;
+        node.deadlineEndTime = document.getElementById('ds-deadline-end-time').value;
+        
         saveState();
         renderAll();
         renderBreadcrumbs();
@@ -2485,6 +3108,7 @@ function undo() {
             uiState.isResizing = false;
             
             applyTheme(state.theme);
+            updateMinimapVisibility();
             if (state.pages.length === 0) {
                 setupDefaultState();
             } else if (!state.pages.find(p => p.id === uiState.activePageId)) {
@@ -2518,6 +3142,7 @@ function redo() {
             uiState.selectedEdgeId = null;
             
             applyTheme(state.theme);
+            updateMinimapVisibility();
             if (!state.pages.find(p => p.id === uiState.activePageId)) {
                 uiState.activePageId = state.pages[0].id;
                 uiState.currentCanvasId = null;
@@ -2535,6 +3160,94 @@ function redo() {
         }
     }
 }
+
+// ==========================================
+// Sidebar Resize Logic
+// ==========================================
+function setupSidebarResizers() {
+    // Helper: make an element act as a drag resizer
+    function makeResizer(resizerEl, targetEl, side, minW, maxW) {
+        let startX, startW;
+        resizerEl.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            startX = e.clientX;
+            startW = targetEl.offsetWidth;
+            document.body.style.cursor = 'ew-resize';
+            document.body.classList.add('is-resizing-sidebar');
+            resizerEl.classList.add('resizing');
+
+            function onMove(ev) {
+                let delta = side === 'right' ? ev.clientX - startX : startX - ev.clientX;
+                let newW = Math.min(maxW, Math.max(minW, startW + delta));
+                targetEl.style.width = newW + 'px';
+                // Update zoom controls left offset to match sidebar
+                if (targetEl.id === 'sidebar') {
+                    const zc = document.getElementById('zoom-controls');
+                    if (zc) zc.style.left = (newW + 40) + 'px';
+                }
+            }
+            function onUp() {
+                document.body.style.cursor = '';
+                document.body.classList.remove('is-resizing-sidebar');
+                resizerEl.classList.remove('resizing');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    }
+
+    // Left sidebar — drag right edge to resize width
+    const leftSidebar = document.getElementById('sidebar');
+    if (leftSidebar && !leftSidebar.querySelector('.sidebar-resizer-right')) {
+        const rEl = document.createElement('div');
+        rEl.className = 'sidebar-resizer-right';
+        leftSidebar.appendChild(rEl);
+        makeResizer(rEl, leftSidebar, 'right', 180, 480);
+    }
+
+    // Right sidebar — drag left edge to resize width
+    const rightSidebar = document.getElementById('details-sidebar');
+    if (rightSidebar && !rightSidebar.querySelector('.sidebar-resizer-left')) {
+        const rEl = document.createElement('div');
+        rEl.className = 'sidebar-resizer-left';
+        rightSidebar.appendChild(rEl);
+        makeResizer(rEl, rightSidebar, 'left', 260, 560);
+    }
+
+    // Left sidebar pages/templates divider
+    const pagesList = document.getElementById('pages-list');
+    if (pagesList && !pagesList.nextElementSibling?.classList.contains('section-resizer')) {
+        const divider = document.createElement('div');
+        divider.className = 'section-resizer';
+        divider.title = 'Drag to resize sections';
+        pagesList.parentNode.insertBefore(divider, pagesList.nextElementSibling);
+
+        let startY, startH;
+        divider.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            startY = e.clientY;
+            startH = pagesList.offsetHeight;
+            document.body.classList.add('is-resizing-sidebar');
+            divider.classList.add('resizing');
+            function onMove(ev) {
+                let delta = ev.clientY - startY;
+                let newH = Math.max(60, Math.min(startH + delta, leftSidebar.offsetHeight - 200));
+                pagesList.style.height = newH + 'px';
+            }
+            function onUp() {
+                document.body.classList.remove('is-resizing-sidebar');
+                divider.classList.remove('resizing');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    }
+}
+
 // ==========================================
 // Settings Modal & Logic
 // ==========================================
@@ -2646,6 +3359,146 @@ function setupSettings() {
             }
         };
         reader.readAsText(file);
+    });
+
+    // Type to Edit Title Settings Toggle
+    const stTypeToEditBtn = document.getElementById('st-type-to-edit');
+    if (stTypeToEditBtn) {
+        stTypeToEditBtn.checked = state.settings.typeToEditTitle !== false;
+        stTypeToEditBtn.addEventListener('change', (e) => {
+            state.settings.typeToEditTitle = e.target.checked;
+            saveState();
+        });
+    }
+
+    const stShowDeadlines = document.getElementById('st-show-deadlines');
+    if (stShowDeadlines) {
+        stShowDeadlines.checked = state.settings.showDeadlines !== false;
+        stShowDeadlines.addEventListener('change', (e) => {
+            state.settings.showDeadlines = e.target.checked;
+            saveState();
+            renderAll();
+        });
+    }
+    const stShowSubtaskDeadlines = document.getElementById('st-show-subtask-deadlines');
+    if (stShowSubtaskDeadlines) {
+        stShowSubtaskDeadlines.checked = state.settings.showSubtaskDeadlines !== false;
+        stShowSubtaskDeadlines.addEventListener('change', (e) => {
+            state.settings.showSubtaskDeadlines = e.target.checked;
+            saveState();
+            renderAll();
+        });
+    }
+    const stNearDeadlineDays = document.getElementById('st-near-deadline-days');
+    if (stNearDeadlineDays) {
+        stNearDeadlineDays.value = state.settings.nearDeadlineDays !== undefined ? state.settings.nearDeadlineDays : 3;
+        stNearDeadlineDays.addEventListener('change', (e) => {
+            state.settings.nearDeadlineDays = parseInt(e.target.value) || 0;
+            saveState();
+            renderAll();
+        });
+    }
+    const stDeadlineEmojiApply = document.getElementById('st-deadline-emoji-apply');
+    if (stDeadlineEmojiApply) {
+        stDeadlineEmojiApply.addEventListener('click', () => {
+            const input = document.getElementById('st-deadline-emoji');
+            if (input) { state.settings.deadlineEmoji = input.value || '🕒'; saveState(); renderAll(); }
+        });
+    }
+    const stShowTimeRemaining = document.getElementById('st-show-time-remaining');
+    if (stShowTimeRemaining) {
+        stShowTimeRemaining.checked = state.settings.showTimeRemaining === true;
+        stShowTimeRemaining.addEventListener('change', (e) => {
+            state.settings.showTimeRemaining = e.target.checked;
+            saveState();
+            renderAll();
+        });
+    }
+
+    // HUD Size Controls
+    const hudSizeLabel = document.getElementById('hud-size-label');
+    const hudResetBtn = document.getElementById('hud-reset');
+    const hudDecreaseBtn = document.getElementById('hud-decrease');
+    const hudIncreaseBtn = document.getElementById('hud-increase');
+
+    function updateHudSizeLabel() {
+        const pct = Math.round((state.settings.hudScale || 1) * 100) + '%';
+        if (hudSizeLabel) hudSizeLabel.textContent = pct;
+    }
+
+    if (hudDecreaseBtn) {
+        hudDecreaseBtn.addEventListener('click', () => {
+            const current = state.settings.hudScale || 1;
+            state.settings.hudScale = Math.max(0.5, Math.round((current - 0.1) * 100) / 100);
+            saveState();
+            applyHudScale();
+            updateHudSizeLabel();
+        });
+    }
+
+    if (hudIncreaseBtn) {
+        hudIncreaseBtn.addEventListener('click', () => {
+            const current = state.settings.hudScale || 1;
+            state.settings.hudScale = Math.min(2, Math.round((current + 0.1) * 100) / 100);
+            saveState();
+            applyHudScale();
+            updateHudSizeLabel();
+        });
+    }
+
+    if (hudResetBtn) {
+        hudResetBtn.addEventListener('click', () => {
+            state.settings.hudScale = 1;
+            saveState();
+            applyHudScale();
+            updateHudSizeLabel();
+        });
+    }
+
+    // Minimap Size Controls
+    const msSizeLabel = document.getElementById('ms-size-label');
+    const msResetBtn = document.getElementById('ms-reset');
+    const msDecreaseBtn = document.getElementById('ms-decrease');
+    const msIncreaseBtn = document.getElementById('ms-increase');
+
+    function updateMinimapSizeLabel() {
+        const pct = Math.round((state.settings.minimapScale || 1) * 100) + '%';
+        if (msSizeLabel) msSizeLabel.textContent = pct;
+    }
+
+    if (msDecreaseBtn) {
+        msDecreaseBtn.addEventListener('click', () => {
+            const current = state.settings.minimapScale || 1;
+            state.settings.minimapScale = Math.max(0.5, Math.round((current - 0.25) * 100) / 100);
+            saveState();
+            applyMinimapScale();
+            updateMinimapSizeLabel();
+        });
+    }
+
+    if (msIncreaseBtn) {
+        msIncreaseBtn.addEventListener('click', () => {
+            const current = state.settings.minimapScale || 1;
+            state.settings.minimapScale = Math.min(3, Math.round((current + 0.25) * 100) / 100);
+            saveState();
+            applyMinimapScale();
+            updateMinimapSizeLabel();
+        });
+    }
+
+    if (msResetBtn) {
+        msResetBtn.addEventListener('click', () => {
+            state.settings.minimapScale = 1;
+            saveState();
+            applyMinimapScale();
+            updateMinimapSizeLabel();
+        });
+    }
+
+    // Refresh label when modal opens
+    settingsToggle.addEventListener('click', () => {
+        updateHudSizeLabel();
+        updateMinimapSizeLabel();
     });
 }
 
@@ -2992,3 +3845,10 @@ function openCustomDialog({ title, message, showInput = true, defaultValue = '',
     };
     window.addEventListener('keydown', handleKey);
 }
+
+// Refresh time remaining every minute
+setInterval(() => {
+    if (state.settings.showTimeRemaining || (state.pages && state.pages.some(p => p.settings && p.settings.showTimeRemaining))) {
+        renderAll();
+    }
+}, 60000);

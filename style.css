@@ -24,6 +24,8 @@
 
     --font-sans: 'Outfit', sans-serif;
     --font-serif: 'Playfair Display', serif;
+    
+    --hud-scale: 1;
 }
 
 [data-theme="dark"] {
@@ -98,6 +100,19 @@ body {
 
 .toggle-btn:hover {
     transform: scale(1.1);
+}
+
+/* HUD Scaling */
+#sidebar, 
+#details-sidebar, 
+#zoom-controls, 
+#breadcrumb-container, 
+.toggle-btn, 
+#context-menu, 
+#toast-container, 
+#settings-modal, 
+#custom-dialog {
+    zoom: var(--hud-scale, 1);
 }
 
 /* Sidebar States */
@@ -304,6 +319,11 @@ body {
     cursor: grab;
     transition: box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
     will-change: transform;
+    display: flex;
+    flex-direction: column;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    overflow: visible;
 }
 
 .node.completed-node {
@@ -338,6 +358,8 @@ body {
     font-weight: 600;
     font-size: 16px;
     pointer-events: none;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .node-type-task {
@@ -367,28 +389,38 @@ body {
     box-shadow: 0 0 15px rgba(130, 160, 188, 0.2);
 }
 
+/* ── 8-direction resize handles ── */
 .resize-handle {
     position: absolute;
-    bottom: 0;
-    right: 0;
-    width: 20px;
-    height: 20px;
-    cursor: se-resize;
-    z-index: 20;
-    background: transparent;
+    width: 10px;
+    height: 10px;
+    background: var(--color-accent-blue);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    z-index: 25;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    box-shadow: 0 0 4px rgba(0,0,0,0.4);
 }
+.node.selected .resize-handle {
+    opacity: 1;
+    pointer-events: all;
+}
+.resize-handle:hover {
+    transform: scale(1.3);
+}
+/* Corner handles */
+.resize-handle[data-dir="nw"] { top: -5px;  left: -5px;  cursor: nw-resize; }
+.resize-handle[data-dir="ne"] { top: -5px;  right: -5px; cursor: ne-resize; }
+.resize-handle[data-dir="se"] { bottom: -5px; right: -5px; cursor: se-resize; }
+.resize-handle[data-dir="sw"] { bottom: -5px; left: -5px;  cursor: sw-resize; }
 
-.resize-handle::after {
-    content: '';
-    position: absolute;
-    bottom: 6px;
-    right: 6px;
-    width: 8px;
-    height: 8px;
-    border-right: 2px solid var(--color-surface-border);
-    border-bottom: 2px solid var(--color-surface-border);
-    border-radius: 2px;
-}
+/* Global cursor lock while resizing */
+body.is-resizing-nw, body.is-resizing-nw * { cursor: nw-resize !important; }
+body.is-resizing-ne, body.is-resizing-ne * { cursor: ne-resize !important; }
+body.is-resizing-se, body.is-resizing-se * { cursor: se-resize !important; }
+body.is-resizing-sw, body.is-resizing-sw * { cursor: sw-resize !important; }
 
 /* Color Themes for Nodes */
 .node.color-theme-gold { border-color: var(--color-accent-gold) !important; }
@@ -524,6 +556,10 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: center;
+    justify-self: center;
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 /* Breadcrumbs */
@@ -775,23 +811,55 @@ textarea:focus {
     transition: left 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+#sidebar.collapsed ~ #workspace #zoom-controls {
+    left: 20px;
+}
+
 .icon-btn {
     background: none;
-    border: none;
+    border: 1.5px solid transparent;
     color: var(--color-text-main);
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
     cursor: pointer;
-    font-size: 18px;
+    font-size: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.2s;
+    transition: background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.icon-btn svg {
+    width: 20px;
+    height: 20px;
 }
 
 .icon-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(212, 175, 55, 0.1);
+    border-color: rgba(212, 175, 55, 0.25);
+    box-shadow: var(--shadow-glow);
+}
+
+#zoom-controls .text-btn {
+    width: auto;
+    height: 42px;
+    padding: 0 14px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 10px;
+    color: var(--color-text-main);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid transparent;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+#zoom-controls .text-btn:hover {
+    background: rgba(212, 175, 55, 0.1);
+    border-color: rgba(212, 175, 55, 0.25);
+    color: var(--color-accent-gold);
 }
 
 /* Palette Controls */
@@ -825,8 +893,14 @@ textarea:focus {
     overflow: hidden;
     background: rgba(130, 160, 188, 0.1);
     backdrop-filter: blur(8px);
-    transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+    transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease, box-shadow 0.3s ease;
     cursor: pointer;
+}
+
+#minimap-container.collapsed {
+    transform: translateY(180px);
+    opacity: 0;
+    pointer-events: none;
 }
 
 #minimap-container:hover {
@@ -844,23 +918,78 @@ textarea:focus {
 
 .minimap-node {
     position: absolute;
-    border-radius: 2px;
-    opacity: 0.8;
+    border-radius: 4px;
+    opacity: 0.95;
+    border: 1px solid var(--color-surface-border);
+    background: var(--color-surface);
+    box-sizing: border-box;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
-.minimap-node.task {
-    background: var(--color-text-main);
+.minimap-node.node-type-info {
+    background: rgba(130, 160, 188, 0.15);
+    border: 1px dashed var(--color-accent-blue);
 }
 
-.minimap-node.info {
-    background: var(--color-accent-blue);
+.minimap-node.node-type-container {
+    background: rgba(212, 175, 55, 0.05);
+    border: 1px dashed var(--color-surface-border);
+    z-index: 1; /* Keep containers behind other nodes in minimap */
 }
+
+.minimap-node.completed-node {
+    background: rgba(155, 180, 169, 0.4) !important;
+    border-color: var(--color-accent-green) !important;
+}
+
+.minimap-node.selected {
+    box-shadow: 0 0 4px var(--color-accent-blue);
+    border-color: var(--color-accent-blue) !important;
+}
+
+/* Color theme mappings in minimap */
+.minimap-node.color-theme-gold { border-color: var(--color-accent-gold) !important; }
+.minimap-node.color-theme-blue { border-color: var(--color-accent-blue) !important; }
+.minimap-node.color-theme-green { border-color: var(--color-accent-green) !important; }
+.minimap-node.color-theme-danger { border-color: var(--color-danger) !important; }
+.minimap-node.color-theme-purple { border-color: var(--color-accent-purple) !important; }
+.minimap-node.color-theme-slate { border-color: var(--color-accent-slate) !important; }
+
+.minimap-node.node-type-info.color-theme-gold { background: rgba(212, 175, 55, 0.15) !important; }
+.minimap-node.node-type-info.color-theme-blue { background: rgba(130, 160, 188, 0.15) !important; }
+.minimap-node.node-type-info.color-theme-green { background: rgba(155, 180, 169, 0.15) !important; }
+.minimap-node.node-type-info.color-theme-danger { background: rgba(217, 108, 108, 0.15) !important; }
+.minimap-node.node-type-info.color-theme-purple { background: rgba(165, 148, 176, 0.15) !important; }
+.minimap-node.node-type-info.color-theme-slate { background: rgba(142, 152, 160, 0.15) !important; }
+
+.minimap-node.node-type-container.color-theme-gold { background: rgba(212, 175, 55, 0.05) !important; border-color: var(--color-accent-gold) !important; }
+.minimap-node.node-type-container.color-theme-blue { background: rgba(130, 160, 188, 0.05) !important; border-color: var(--color-accent-blue) !important; }
+.minimap-node.node-type-container.color-theme-green { background: rgba(155, 180, 169, 0.05) !important; border-color: var(--color-accent-green) !important; }
+.minimap-node.node-type-container.color-theme-danger { background: rgba(217, 108, 108, 0.05) !important; border-color: var(--color-danger) !important; }
+.minimap-node.node-type-container.color-theme-purple { background: rgba(165, 148, 176, 0.05) !important; border-color: var(--color-accent-purple) !important; }
+.minimap-node.node-type-container.color-theme-slate { background: rgba(142, 152, 160, 0.05) !important; border-color: var(--color-accent-slate) !important; }
 
 #minimap-viewport {
     position: absolute;
-    border: 2px solid var(--color-accent-blue);
-    background: rgba(130, 160, 188, 0.1);
+    border: 1.5px solid var(--color-accent-gold); /* Thinner, clean golden view outline */
+    background: rgba(212, 175, 55, 0.04); /* Subtle golden background */
+    box-shadow: 0 0 8px rgba(212, 175, 55, 0.15); /* Soft premium gold glow */
     cursor: move;
+    box-sizing: border-box;
+    transition: border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.25s ease, box-shadow 0.25s ease;
+}
+
+#minimap-viewport.dragging {
+    border-color: var(--color-accent-blue) !important; /* Elegant shift to blue during drags */
+    background: rgba(130, 160, 188, 0.12) !important; /* Soft blue focus overlay */
+    box-shadow: 0 0 12px rgba(130, 160, 188, 0.4) !important; /* Stronger blue glow focus */
+}
+
+.icon-btn.active {
+    background: rgba(212, 175, 55, 0.25);
+    color: var(--color-accent-gold);
+    border: 2.5px solid var(--color-accent-gold) !important; /* Bold, wide golden border highlight */
+    box-shadow: var(--shadow-glow);
 }
 
 /* Form element fixes */
@@ -1004,4 +1133,240 @@ select option {
 .edge-path.flowing {
     stroke-dasharray: 8, 6;
     animation: edgeFlow 1.2s linear infinite !important;
+}
+
+/* ==========================================
+   Sidebar Resize Handles
+   ========================================== */
+
+/* Right-edge drag handle on left sidebar */
+.sidebar-resizer-right {
+    position: absolute;
+    top: 0;
+    right: -6px;
+    width: 12px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidebar-resizer-right::after {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 40px;
+    border-radius: 3px;
+    background: var(--color-surface-border);
+    opacity: 0.25; /* Subtle visibility by default so users know it's draggable */
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                height 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                background 0.25s ease, 
+                box-shadow 0.25s ease;
+}
+
+.sidebar-resizer-right:hover::after,
+.sidebar-resizer-right.resizing::after {
+    opacity: 1;
+    height: 100px;
+    background: var(--color-accent-gold);
+    box-shadow: 0 0 10px var(--color-accent-gold);
+}
+
+/* Left-edge drag handle on right sidebar */
+.sidebar-resizer-left {
+    position: absolute;
+    top: 0;
+    left: -6px;
+    width: 12px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidebar-resizer-left::after {
+    content: '';
+    display: block;
+    width: 3px;
+    height: 40px;
+    border-radius: 3px;
+    background: var(--color-surface-border);
+    opacity: 0.25;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                height 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                background 0.25s ease, 
+                box-shadow 0.25s ease;
+}
+
+.sidebar-resizer-left:hover::after,
+.sidebar-resizer-left.resizing::after {
+    opacity: 1;
+    height: 100px;
+    background: var(--color-accent-gold);
+    box-shadow: 0 0 10px var(--color-accent-gold);
+}
+
+/* Pages / Templates vertical section resizer */
+.section-resizer {
+    flex-shrink: 0;
+    height: 10px;
+    margin: 4px -8px;
+    cursor: ns-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.section-resizer::after {
+    content: '';
+    display: block;
+    width: 32px;
+    height: 3px;
+    border-radius: 3px;
+    background: var(--color-surface-border);
+    opacity: 0.4;
+    transition: background 0.25s ease, 
+                width 0.25s cubic-bezier(0.16, 1, 0.3, 1), 
+                box-shadow 0.25s ease,
+                opacity 0.25s ease;
+}
+
+.section-resizer:hover::after,
+.section-resizer.resizing::after {
+    opacity: 1;
+    background: var(--color-accent-gold);
+    width: 64px;
+    box-shadow: 0 0 10px var(--color-accent-gold);
+}
+
+/* Cursor lock while resizing sidebar */
+body.is-resizing-sidebar,
+body.is-resizing-sidebar * {
+    cursor: ew-resize !important;
+    user-select: none !important;
+}
+
+/* ==========================================
+   Enhanced Date / Time Inputs
+   ========================================== */
+
+/* Deadline section container */
+#ds-deadline-section {
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--color-surface-border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-top: 16px;
+}
+
+[data-theme="dark"] #ds-deadline-section {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+#ds-deadline-section h3 {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+}
+
+/* Row label */
+.deadline-row-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    width: 34px;
+    flex-shrink: 0;
+}
+
+/* Shared input styling for date and time fields */
+.node-date-input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 8px;
+    border-radius: 8px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-surface-border);
+    color: var(--color-text-main);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+    color-scheme: light dark;
+}
+
+[data-theme="dark"] .node-date-input {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.node-date-input:focus,
+.node-date-input:hover {
+    border-color: var(--color-accent-gold);
+    box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.15);
+}
+
+/* Style the native date/time picker icon */
+.node-date-input::-webkit-calendar-picker-indicator {
+    opacity: 0.5;
+    cursor: pointer;
+    filter: invert(0);
+}
+
+[data-theme="dark"] .node-date-input::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.6;
+}
+
+.node-date-input::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+}
+
+/* Separator between start and end rows */
+.deadline-row-sep {
+    height: 1px;
+    background: var(--color-surface-border);
+    margin: 6px 0;
+    opacity: 0.6;
+}
+
+/* Premium Clear Buttons */
+.clear-btn {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--color-surface-border);
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition: all 0.2s ease;
+    outline: none;
+    flex-shrink: 0;
+}
+
+.clear-btn:hover {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+    background: rgba(217, 108, 108, 0.1);
+    box-shadow: 0 0 8px rgba(217, 108, 108, 0.2);
+    transform: scale(1.05);
+}
+
+.clear-btn:active {
+    transform: scale(0.95);
 }
