@@ -17,6 +17,9 @@
     <button id="toggle-sidebar-left" class="glass-btn toggle-btn" style="left: 20px; top: 20px;">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
     </button>
+    <button id="btn-collaborate" class="glass-btn toggle-btn" title="Collaboration Mode">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+    </button>
     <button id="toggle-sidebar-right" class="glass-btn toggle-btn" style="right: 20px; top: 20px;">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
     </button>
@@ -69,6 +72,9 @@
             <button id="minimap-toggle" class="icon-btn" title="Toggle Minimap">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
             </button>
+            <button id="drawing-toolbar-toggle" class="icon-btn" title="Toggle Drawing Panel">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            </button>
         </div>
         
         <div id="minimap-container" class="glass-panel">
@@ -102,6 +108,7 @@
                 </marker>
             </defs>
             <g id="edges-group"></g>
+            <g id="drawings-group"></g>
             <path id="drawing-edge" class="drawing-edge" d="" style="display: none;"></path>
         </svg>
 
@@ -110,6 +117,9 @@
         
         <!-- Container for Edge Labels -->
         <div id="labels-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; z-index: 30; pointer-events: none;"></div>
+        
+        <!-- Container for Collaboration Live Cursors -->
+        <div id="cursors-container"></div>
         
         <!-- Selection Box for grouping -->
         <div id="selection-box" style="display: none;"></div>
@@ -415,6 +425,68 @@
 
     <!-- Sleek Toast Notification Container -->
     <div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 5000; display: flex; flex-direction: column; gap: 10px; pointer-events: none;"></div>
+
+    <!-- Collaboration Modal -->
+    <div id="collab-modal" class="glass-panel" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; z-index: 3000; border-radius: 16px; padding: 24px; flex-direction: column;">
+        <div class="settings-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="font-family: var(--font-serif); font-size: 22px; color: var(--color-accent-blue);">Collaboration Room</h2>
+            <button id="close-collab" class="icon-btn">×</button>
+        </div>
+        <div class="settings-content" style="flex-grow: 1;">
+            <!-- Start Collaboration section -->
+            <div id="collab-start-section" style="display: block;">
+                <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 20px; line-height: 1.4;">Start real-time collaboration with your friends! Click the button below to generate a shareable session.</p>
+                <button id="collab-btn-start" class="outline-btn" style="width: 100%; margin-top: 0; background: var(--color-accent-blue); color: #000; font-weight: 500; border-color: var(--color-accent-blue);">Start Collaboration Session</button>
+            </div>
+            <!-- Active Collaboration section -->
+            <div id="collab-active-section" style="display: none;">
+                <div class="collab-modal-section">
+                    <h3>Invite Friends</h3>
+                    <p style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 8px;">Share this link with other editors:</p>
+                    <div class="share-link-container">
+                        <input type="text" id="collab-share-link" class="share-link-input" readonly>
+                        <button id="collab-btn-copy" class="outline-btn" style="margin-top: 0; padding: 0 14px;">Copy</button>
+                    </div>
+                </div>
+                <div class="collab-modal-section">
+                    <h3>Active Users</h3>
+                    <div id="collab-participants" class="participants-list">
+                        <!-- Participants injected via JS -->
+                    </div>
+                </div>
+                <button id="collab-btn-stop" class="text-btn danger" style="width: 100%; margin-top: 8px;">Stop Session</button>
+            </div>
+        </div>
+    </div>
+    <div id="collab-backdrop" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.3); backdrop-filter: blur(4px); z-index: 2999;"></div>
+
+    <!-- Floating Drawing Toolbar -->
+    <div id="drawing-toolbar" class="glass-panel drawing-toolbar collapsed">
+        <button id="dt-select" class="drawing-tool-btn active" title="Select / Edit Mode">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+        </button>
+        <button id="dt-draw" class="drawing-tool-btn" title="Pencil (Freehand Drawing)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+        </button>
+        <button id="dt-erase" class="drawing-tool-btn" title="Eraser (Erase Drawings)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H4"></path><path d="M20 20H4M20 20h-4v-4H4v4H2M8 4L2 10l6 6 8-8-6-6z"></path></svg>
+        </button>
+        
+        <div class="drawing-toolbar-separator"></div>
+        
+        <div class="drawing-color-palette">
+            <button class="drawing-color-btn selected" data-color="gold" style="background: var(--color-accent-gold);" title="Gold"></button>
+            <button class="drawing-color-btn" data-color="blue" style="background: var(--color-accent-blue);" title="Blue"></button>
+            <button class="drawing-color-btn" data-color="green" style="background: var(--color-accent-green);" title="Green"></button>
+            <button class="drawing-color-btn" data-color="danger" style="background: var(--color-danger);" title="Red"></button>
+            <button class="drawing-color-btn" data-color="purple" style="background: var(--color-accent-purple);" title="Purple"></button>
+            <button class="drawing-color-btn" data-color="slate" style="background: var(--color-accent-slate);" title="Slate"></button>
+        </div>
+        
+        <div class="drawing-toolbar-separator"></div>
+        
+        <input type="range" id="dt-stroke-width" class="drawing-stroke-slider" min="2" max="15" value="4" title="Stroke Width">
+    </div>
 
     <script src="app.js"></script>
 </body>

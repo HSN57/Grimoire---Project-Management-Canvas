@@ -109,6 +109,8 @@ function init() {
     setupEventListeners();
     setupSidebarResizers();
     updateSidebarUI();
+    initCollaboration();
+    initDrawing();
 }
 
 // State Management
@@ -126,6 +128,7 @@ function saveState() {
             historyIndex++;
         }
     }
+    syncStateToYjs();
 }
 
 function loadState() {
@@ -197,6 +200,8 @@ function loadState() {
                 if (!n.pageId) n.pageId = 'default-page'; // Assign orphaned nodes
             });
             
+            state.drawings = parsed.drawings || [];
+            
         } catch (e) {
             console.error("Failed to load state", e);
             setupDefaultState();
@@ -213,6 +218,7 @@ function setupDefaultState() {
         settings: { subtasksPerRow: 1, defaultAlignment: 'center', gridSize: 40, snapToGrid: false, snapResizeToGrid: false, routingMode: 'bezier', overrideDeadlineSettings: false, showDeadlines: true, showSubtaskDeadlines: true, nearDeadlineDays: 3, deadlineEmoji: '🕒', showTimeRemaining: false }
     }];
     state.templates = [];
+    state.drawings = [];
     state.settings = { customColors: { light: {}, dark: {} }, minimapVisible: true, minimapScale: 1, hudScale: 1, typeToEditTitle: true, showDeadlines: true, showSubtaskDeadlines: true, nearDeadlineDays: 3, deadlineEmoji: '🕒', showTimeRemaining: false };
     uiState.activePageId = 'default-page';
 }
@@ -356,6 +362,13 @@ function renderAll() {
     nodesContainer.innerHTML = '';
     labelsContainer.innerHTML = '';
     edgesGroup.innerHTML = '';
+    
+    const drawingsGroup = document.getElementById('drawings-group');
+    if (drawingsGroup) {
+        drawingsGroup.innerHTML = '';
+        drawingsGroup.setAttribute('transform', `translate(${uiState.canvasOffset.x}, ${uiState.canvasOffset.y}) scale(${uiState.zoom})`);
+    }
+
     nodesContainer.style.transform = `translate(${uiState.canvasOffset.x}px, ${uiState.canvasOffset.y}px) scale(${uiState.zoom})`;
     labelsContainer.style.transform = `translate(${uiState.canvasOffset.x}px, ${uiState.canvasOffset.y}px) scale(${uiState.zoom})`;
     edgesGroup.setAttribute('transform', `translate(${uiState.canvasOffset.x}, ${uiState.canvasOffset.y}) scale(${uiState.zoom})`);
@@ -368,6 +381,7 @@ function renderAll() {
     const visibleEdges = state.edges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
     visibleEdges.forEach(renderEdge);
     
+    renderDrawings();
     renderMinimap(visibleNodes);
 }
 
@@ -1731,7 +1745,24 @@ function setupEventListeners() {
 
     // Global Mouse Events
     workspace.addEventListener('mousedown', (e) => {
-        if (e.target.id === 'workspace' || e.target.id === 'edges-canvas' || e.target.id === 'nodes-container') {
+        if (uiState.drawingMode === 'draw') {
+            uiState.isDrawing = true;
+            const rect = workspace.getBoundingClientRect();
+            const x = (e.clientX - rect.left - uiState.canvasOffset.x) / uiState.zoom;
+            const y = (e.clientY - rect.top - uiState.canvasOffset.y) / uiState.zoom;
+            
+            uiState.currentDrawingPath = {
+                id: 'path-' + generateId(),
+                points: [{ x, y }],
+                color: uiState.drawingColor || 'gold',
+                strokeWidth: uiState.drawingStrokeWidth || 4,
+                pageId: uiState.activePageId,
+                canvasId: uiState.currentCanvasId
+            };
+            return;
+        }
+
+        if (e.target.id === 'workspace' || e.target.id === 'edges-canvas' || e.target.id === 'nodes-container' || e.target.id === 'drawings-group') {
             closeContextMenu();
             if (e.shiftKey) {
                 uiState.isSelecting = true;
@@ -1790,6 +1821,16 @@ function setupEventListeners() {
     });
 
     window.addEventListener('mousemove', (e) => {
+        if (uiState.isDrawing && uiState.drawingMode === 'draw' && uiState.currentDrawingPath) {
+            const rect = workspace.getBoundingClientRect();
+            const x = (e.clientX - rect.left - uiState.canvasOffset.x) / uiState.zoom;
+            const y = (e.clientY - rect.top - uiState.canvasOffset.y) / uiState.zoom;
+            
+            uiState.currentDrawingPath.points.push({ x, y });
+            renderActiveDrawingPath();
+            return;
+        }
+
         if (uiState.isDraggingMinimap) {
             panCanvasToMinimapPosition(e.clientX, e.clientY);
         } else if (uiState.isResizing) {
@@ -2024,6 +2065,18 @@ function setupEventListeners() {
     });
 
     window.addEventListener('mouseup', () => {
+        if (uiState.isDrawing) {
+            uiState.isDrawing = false;
+            if (uiState.currentDrawingPath && uiState.currentDrawingPath.points.length > 1) {
+                if (!state.drawings) state.drawings = [];
+                state.drawings.push(uiState.currentDrawingPath);
+                saveState();
+            }
+            uiState.currentDrawingPath = null;
+            const tempPath = document.getElementById('temp-active-path');
+            if (tempPath) tempPath.remove();
+            renderAll();
+        }
         if (uiState.isDraggingMinimap) {
             uiState.isDraggingMinimap = false;
             const vp = document.getElementById('minimap-viewport');
@@ -3852,3 +3905,477 @@ setInterval(() => {
         renderAll();
     }
 }, 60000);
+
+// --- COLLABORATION WITH YJS & WEBRTC ---
+let ydoc = null;
+let yprovider = null;
+let yNodesMap = null;
+let yEdgesMap = null;
+let yPagesMap = null;
+let yDrawingsMap = null;
+let yThemeMap = null;
+let ySettingsMap = null;
+let localUser = {
+    name: 'Wizard ' + Math.floor(Math.random() * 1000),
+    color: ['gold', 'blue', 'green', 'purple', 'slate'][Math.floor(Math.random() * 5)]
+};
+let isApplyingRemoteUpdate = false;
+
+async function initCollaboration() {
+    setupCollabDOM();
+    
+    // Check if room is present in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const room = urlParams.get('room');
+    if (room) {
+        startCollaboration(room);
+    }
+}
+
+function setupCollabDOM() {
+    const btnCollab = document.getElementById('btn-collaborate');
+    const modalCollab = document.getElementById('collab-modal');
+    const closeCollab = document.getElementById('close-collab');
+    const collabBackdrop = document.getElementById('collab-backdrop');
+    
+    const startSection = document.getElementById('collab-start-section');
+    const activeSection = document.getElementById('collab-active-section');
+    
+    const btnStart = document.getElementById('collab-btn-start');
+    const btnStop = document.getElementById('collab-btn-stop');
+    const btnCopy = document.getElementById('collab-btn-copy');
+    const shareLink = document.getElementById('collab-share-link');
+    
+    btnCollab.addEventListener('click', () => {
+        modalCollab.style.display = 'flex';
+        collabBackdrop.style.display = 'block';
+        updateCollabUI();
+    });
+    
+    const hideModal = () => {
+        modalCollab.style.display = 'none';
+        collabBackdrop.style.display = 'none';
+    };
+    closeCollab.addEventListener('click', hideModal);
+    collabBackdrop.addEventListener('click', hideModal);
+    
+    btnStart.addEventListener('click', () => {
+        const roomId = 'room-' + generateId();
+        startCollaboration(roomId);
+        updateCollabUI();
+    });
+    
+    btnStop.addEventListener('click', () => {
+        stopCollaboration();
+        updateCollabUI();
+    });
+    
+    btnCopy.addEventListener('click', () => {
+        shareLink.select();
+        document.execCommand('copy');
+        showToast('Link copied to clipboard!', 'success');
+    });
+}
+
+function updateCollabUI() {
+    const btnCollab = document.getElementById('btn-collaborate');
+    const startSection = document.getElementById('collab-start-section');
+    const activeSection = document.getElementById('collab-active-section');
+    const shareLink = document.getElementById('collab-share-link');
+    
+    if (yprovider) {
+        btnCollab.classList.add('collab-active');
+        startSection.style.display = 'none';
+        activeSection.style.display = 'block';
+        shareLink.value = window.location.href;
+    } else {
+        btnCollab.classList.remove('collab-active');
+        startSection.style.display = 'block';
+        activeSection.style.display = 'none';
+        shareLink.value = '';
+    }
+}
+
+async function startCollaboration(roomId) {
+    if (yprovider) return;
+    
+    showToast('Connecting to room...', 'info');
+    
+    // Update URL if needed
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('room') !== roomId) {
+        url.searchParams.set('room', roomId);
+        window.history.pushState({}, '', url);
+    }
+    
+    try {
+        // Dynamically import Yjs & WebRTC
+        const Y = await import('https://esm.sh/yjs@13.6.15');
+        const { WebrtcProvider } = await import('https://esm.sh/y-webrtc@10.3.0');
+        
+        ydoc = new Y.Doc();
+        yprovider = new WebrtcProvider(roomId, ydoc, {
+            signaling: ['wss://signaling.yjs.dev']
+        });
+        
+        yNodesMap = ydoc.getMap('nodes');
+        yEdgesMap = ydoc.getMap('edges');
+        yPagesMap = ydoc.getMap('pages');
+        yDrawingsMap = ydoc.getMap('drawings');
+        yThemeMap = ydoc.getMap('theme');
+        ySettingsMap = ydoc.getMap('settings');
+        
+        // If we have local state, load it into Yjs if Yjs is empty
+        if (yPagesMap.size === 0 && state.pages.length > 0) {
+            state.pages.forEach(p => yPagesMap.set(p.id, p));
+            state.nodes.forEach(n => yNodesMap.set(n.id, n));
+            state.edges.forEach(e => yEdgesMap.set(e.id, e));
+            if (state.drawings) state.drawings.forEach(d => yDrawingsMap.set(d.id, d));
+            yThemeMap.set('theme', state.theme);
+            ySettingsMap.set('settings', state.settings);
+        } else {
+            // Load from Yjs to local state
+            syncStateFromYjs();
+        }
+        
+        // Set up observers
+        const handleYjsChange = () => {
+            if (isApplyingRemoteUpdate) return;
+            isApplyingRemoteUpdate = true;
+            syncStateFromYjs();
+            renderAll();
+            updateSidebarUI();
+            renderPagesList();
+            renderBreadcrumbs();
+            isApplyingRemoteUpdate = false;
+        };
+        
+        yNodesMap.observe(handleYjsChange);
+        yEdgesMap.observe(handleYjsChange);
+        yPagesMap.observe(handleYjsChange);
+        yDrawingsMap.observe(handleYjsChange);
+        yThemeMap.observe(handleYjsChange);
+        ySettingsMap.observe(handleYjsChange);
+        
+        // Setup Awareness (Live Cursors)
+        const awareness = yprovider.awareness;
+        awareness.setLocalStateField('user', {
+            name: localUser.name,
+            color: getCssColorForName(localUser.color)
+        });
+        
+        // Add mouse move listener to broadcast cursor
+        workspace.addEventListener('mousemove', (e) => {
+            if (!yprovider) return;
+            const rect = workspace.getBoundingClientRect();
+            const x = (e.clientX - rect.left - uiState.canvasOffset.x) / uiState.zoom;
+            const y = (e.clientY - rect.top - uiState.canvasOffset.y) / uiState.zoom;
+            
+            awareness.setLocalStateField('cursor', {
+                x, y,
+                activePageId: uiState.activePageId,
+                currentCanvasId: uiState.currentCanvasId
+            });
+        });
+        
+        // Listen to remote cursors
+        awareness.on('change', () => {
+            renderLiveCursors(awareness.getStates());
+            renderParticipantsList(awareness.getStates());
+        });
+        
+        showToast('Connected to collaboration session!', 'success');
+        updateCollabUI();
+        renderAll();
+    } catch (e) {
+        console.error("Collaboration failed to connect", e);
+        showToast('Could not establish collaboration connection.', 'danger');
+    }
+}
+
+function stopCollaboration() {
+    if (!yprovider) return;
+    
+    yprovider.destroy();
+    ydoc.destroy();
+    yprovider = null;
+    ydoc = null;
+    
+    // Clear URL parameter
+    const url = new URL(window.location.href);
+    url.searchParams.delete('room');
+    window.history.pushState({}, '', url);
+    
+    // Clear cursor layer
+    document.getElementById('cursors-container').innerHTML = '';
+    
+    showToast('Collaboration session stopped.', 'danger');
+}
+
+function syncStateFromYjs() {
+    state.nodes = Array.from(yNodesMap.values());
+    state.edges = Array.from(yEdgesMap.values());
+    state.pages = Array.from(yPagesMap.values());
+    state.drawings = Array.from(yDrawingsMap.values());
+    if (yThemeMap.has('theme')) state.theme = yThemeMap.get('theme');
+    if (ySettingsMap.has('settings')) state.settings = ySettingsMap.get('settings');
+    
+    // Save to localstorage as backup
+    localStorage.setItem('grimoire_state_v3', JSON.stringify(state));
+}
+
+function syncStateToYjs() {
+    if (!yprovider || isApplyingRemoteUpdate) return;
+    
+    // Batch set nodes
+    const localNodeIds = state.nodes.map(n => n.id);
+    for (const key of yNodesMap.keys()) {
+        if (!localNodeIds.includes(key)) yNodesMap.delete(key);
+    }
+    state.nodes.forEach(n => {
+        const yNode = yNodesMap.get(n.id);
+        if (JSON.stringify(yNode) !== JSON.stringify(n)) {
+            yNodesMap.set(n.id, n);
+        }
+    });
+    
+    // Batch set edges
+    const localEdgeIds = state.edges.map(e => e.id);
+    for (const key of yEdgesMap.keys()) {
+        if (!localEdgeIds.includes(key)) yEdgesMap.delete(key);
+    }
+    state.edges.forEach(e => {
+        const yEdge = yEdgesMap.get(e.id);
+        if (JSON.stringify(yEdge) !== JSON.stringify(e)) {
+            yEdgesMap.set(e.id, e);
+        }
+    });
+
+    // Batch set pages
+    const localPageIds = state.pages.map(p => p.id);
+    for (const key of yPagesMap.keys()) {
+        if (!localPageIds.includes(key)) yPagesMap.delete(key);
+    }
+    state.pages.forEach(p => {
+        const yPage = yPagesMap.get(p.id);
+        if (JSON.stringify(yPage) !== JSON.stringify(p)) {
+            yPagesMap.set(p.id, p);
+        }
+    });
+    
+    // Batch set drawings
+    if (state.drawings) {
+        const localDrawingIds = state.drawings.map(d => d.id);
+        for (const key of yDrawingsMap.keys()) {
+            if (!localDrawingIds.includes(key)) yDrawingsMap.delete(key);
+        }
+        state.drawings.forEach(d => {
+            const yDrawing = yDrawingsMap.get(d.id);
+            if (JSON.stringify(yDrawing) !== JSON.stringify(d)) {
+                yDrawingsMap.set(d.id, d);
+            }
+        });
+    }
+    
+    yThemeMap.set('theme', state.theme);
+    ySettingsMap.set('settings', state.settings);
+}
+
+function getCssColorForName(colorName) {
+    const colors = {
+        gold: '#D4AF37',
+        blue: '#82A0BC',
+        green: '#9BB4A9',
+        purple: '#A594B0',
+        slate: '#8E98A0'
+    };
+    return colors[colorName] || '#D4AF37';
+}
+
+function renderLiveCursors(clientStates) {
+    const container = document.getElementById('cursors-container');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    const myClientId = yprovider.awareness.clientID;
+    
+    clientStates.forEach((clientState, clientId) => {
+        if (clientId === myClientId) return;
+        
+        const cursor = clientState.cursor;
+        const user = clientState.user;
+        
+        if (!cursor || !user) return;
+        
+        if (cursor.activePageId === uiState.activePageId && cursor.currentCanvasId === uiState.currentCanvasId) {
+            const cursorEl = document.createElement('div');
+            cursorEl.className = 'live-cursor';
+            cursorEl.style.left = cursor.x + 'px';
+            cursorEl.style.top = cursor.y + 'px';
+            
+            cursorEl.innerHTML = `
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path d="M4.5 3V17L9.5 12L15.5 18L18 15.5L12 9.5L17 4.5H4.5Z" fill="${user.color}" stroke="#fff" stroke-width="1.5"/>
+                </svg>
+                <div class="live-cursor-label" style="background: ${user.color};">${user.name}</div>
+            `;
+            container.appendChild(cursorEl);
+        }
+    });
+}
+
+function renderParticipantsList(clientStates) {
+    const list = document.getElementById('collab-participants');
+    if (!list) return;
+    list.innerHTML = '';
+    
+    clientStates.forEach((clientState, clientId) => {
+        const user = clientState.user;
+        if (!user) return;
+        
+        const item = document.createElement('div');
+        item.className = 'participant-item';
+        item.innerHTML = `
+            <div class="participant-dot" style="background: ${user.color};"></div>
+            <span>${user.name} ${clientId === yprovider.awareness.clientID ? ' (You)' : ''}</span>
+        `;
+        list.appendChild(item);
+    });
+}
+
+// --- FREEHAND DRAWING AND ERASING ---
+function initDrawing() {
+    uiState.drawingMode = 'select'; // select, draw, erase
+    uiState.isDrawing = false;
+    uiState.currentDrawingPath = null;
+    uiState.drawingColor = 'gold';
+    uiState.drawingStrokeWidth = 4;
+    uiState.drawingToolbarCollapsed = true;
+    
+    const toolbar = document.getElementById('drawing-toolbar');
+    const toggleBtn = document.getElementById('drawing-toolbar-toggle');
+    
+    const btnSelect = document.getElementById('dt-select');
+    const btnDraw = document.getElementById('dt-draw');
+    const btnErase = document.getElementById('dt-erase');
+    
+    const colorBtns = document.querySelectorAll('.drawing-color-btn');
+    const sliderStroke = document.getElementById('dt-stroke-width');
+    
+    toggleBtn.addEventListener('click', () => {
+        uiState.drawingToolbarCollapsed = !uiState.drawingToolbarCollapsed;
+        toggleBtn.classList.toggle('active', !uiState.drawingToolbarCollapsed);
+        toolbar.classList.toggle('collapsed', uiState.drawingToolbarCollapsed);
+        
+        if (uiState.drawingToolbarCollapsed) {
+            setDrawingMode('select');
+        }
+    });
+    
+    btnSelect.addEventListener('click', () => setDrawingMode('select'));
+    btnDraw.addEventListener('click', () => setDrawingMode('draw'));
+    btnErase.addEventListener('click', () => setDrawingMode('erase'));
+    
+    function setDrawingMode(mode) {
+        uiState.drawingMode = mode;
+        
+        btnSelect.classList.toggle('active', mode === 'select');
+        btnDraw.classList.toggle('active', mode === 'draw');
+        btnErase.classList.toggle('active', mode === 'erase');
+        
+        if (mode === 'draw') {
+            workspace.style.cursor = 'crosshair';
+        } else if (mode === 'erase') {
+            workspace.style.cursor = 'cell';
+        } else {
+            workspace.style.cursor = '';
+        }
+        
+        renderDrawings();
+    }
+    
+    colorBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            colorBtns.forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            uiState.drawingColor = btn.dataset.color;
+        });
+    });
+    
+    sliderStroke.addEventListener('input', (e) => {
+        uiState.drawingStrokeWidth = parseInt(e.target.value);
+    });
+}
+
+function renderDrawings() {
+    const drawingsGroup = document.getElementById('drawings-group');
+    if (!drawingsGroup) return;
+    drawingsGroup.innerHTML = '';
+    
+    if (!state.drawings) state.drawings = [];
+    
+    const visibleDrawings = state.drawings.filter(d => d.pageId === uiState.activePageId && d.canvasId === uiState.currentCanvasId);
+    
+    visibleDrawings.forEach(drawing => {
+        const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathEl.setAttribute('id', `drawing-${drawing.id}`);
+        pathEl.setAttribute('d', pointsToSVGPath(drawing.points));
+        pathEl.setAttribute('class', 'freehand-path' + (uiState.drawingMode === 'erase' ? ' erasable' : ''));
+        const colorVar = getCssColorForName(drawing.color);
+        pathEl.setAttribute('stroke', colorVar);
+        pathEl.setAttribute('stroke-width', drawing.strokeWidth);
+        pathEl.style.setProperty('--stroke-width', drawing.strokeWidth + 'px');
+        
+        pathEl.addEventListener('click', (e) => {
+            if (uiState.drawingMode === 'erase') {
+                e.stopPropagation();
+                deleteDrawing(drawing.id);
+            }
+        });
+        
+        pathEl.addEventListener('mouseenter', (e) => {
+            if (uiState.drawingMode === 'erase' && e.buttons === 1) {
+                e.stopPropagation();
+                deleteDrawing(drawing.id);
+            }
+        });
+        
+        drawingsGroup.appendChild(pathEl);
+    });
+}
+
+function deleteDrawing(id) {
+    state.drawings = state.drawings.filter(d => d.id !== id);
+    saveState();
+    renderAll();
+}
+
+function renderActiveDrawingPath() {
+    const drawingsGroup = document.getElementById('drawings-group');
+    if (!drawingsGroup || !uiState.currentDrawingPath) return;
+    
+    let pathEl = document.getElementById('temp-active-path');
+    if (!pathEl) {
+        pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathEl.id = 'temp-active-path';
+        drawingsGroup.appendChild(pathEl);
+    }
+    
+    const colorVar = getCssColorForName(uiState.currentDrawingPath.color);
+    pathEl.setAttribute('class', 'freehand-path');
+    pathEl.setAttribute('stroke', colorVar);
+    pathEl.setAttribute('stroke-width', uiState.currentDrawingPath.strokeWidth);
+    pathEl.style.setProperty('--stroke-width', uiState.currentDrawingPath.strokeWidth + 'px');
+    
+    const dStr = pointsToSVGPath(uiState.currentDrawingPath.points);
+    pathEl.setAttribute('d', dStr);
+}
+
+function pointsToSVGPath(points) {
+    if (!points || points.length === 0) return '';
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+        d += ` L ${points[i].x} ${points[i].y}`;
+    }
+    return d;
+}
