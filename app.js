@@ -4098,7 +4098,11 @@ async function startCollaboration(roomId) {
         renderAll();
     } catch (e) {
         console.error("Collaboration failed to connect", e);
-        showToast('Could not establish collaboration connection.', 'danger');
+        if (window.location.protocol === 'file:') {
+            showToast('Collaboration requires a local web server (or GitHub Pages) due to browser security blocking file:// modules.', 'danger');
+        } else {
+            showToast('Failed to connect to collaboration room.', 'danger');
+        }
     }
 }
 
