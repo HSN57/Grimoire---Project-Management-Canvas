@@ -3987,7 +3987,12 @@ function updateCollabUI() {
         btnCollab.classList.add('collab-active');
         startSection.style.display = 'none';
         activeSection.style.display = 'block';
-        shareLink.value = window.location.href;
+        const url = new URL(window.location.href);
+        // Ensure the share link has the correct room ID even if pushState failed
+        if (yprovider && yprovider.roomName) {
+            url.searchParams.set('room', yprovider.roomName);
+        }
+        shareLink.value = url.toString();
     } else {
         btnCollab.classList.remove('collab-active');
         startSection.style.display = 'block';
@@ -4005,7 +4010,11 @@ async function startCollaboration(roomId) {
     const url = new URL(window.location.href);
     if (url.searchParams.get('room') !== roomId) {
         url.searchParams.set('room', roomId);
-        window.history.pushState({}, '', url);
+        try {
+            window.history.pushState({}, '', url);
+        } catch (e) {
+            console.warn('Could not update URL history (running locally via file://)');
+        }
     }
     
     try {
@@ -4102,9 +4111,11 @@ function stopCollaboration() {
     ydoc = null;
     
     // Clear URL parameter
-    const url = new URL(window.location.href);
-    url.searchParams.delete('room');
-    window.history.pushState({}, '', url);
+    try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('room');
+        window.history.pushState({}, '', url);
+    } catch(e) {}
     
     // Clear cursor layer
     document.getElementById('cursors-container').innerHTML = '';
