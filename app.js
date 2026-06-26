@@ -3601,9 +3601,7 @@ function renderColorInputs() {
     document.body.removeChild(tempDiv);
 }
 
-setupSettings();
-init();
-
+// init() moved to bottom of file
 // --- CUSTOM TEMPLATES FUNCTIONALITY ---
 
 function getDescendantNodeIds(nodeIds) {
@@ -3961,7 +3959,9 @@ function setupCollabDOM() {
     
     btnStart.addEventListener('click', () => {
         const roomId = 'room-' + generateId();
-        startCollaboration(roomId);
+        const signalingInput = document.getElementById('collab-signaling-url');
+        const customUrl = signalingInput && signalingInput.value.trim();
+        startCollaboration(roomId, customUrl || null);
         updateCollabUI();
     });
     
@@ -4001,7 +4001,7 @@ function updateCollabUI() {
     }
 }
 
-async function startCollaboration(roomId) {
+async function startCollaboration(roomId, customSignalingUrl) {
     if (yprovider) return;
     
     showToast('Connecting to room...', 'info');
@@ -4020,11 +4020,15 @@ async function startCollaboration(roomId) {
     try {
         // Dynamically import Yjs & WebRTC
         const Y = await import('https://esm.sh/yjs@13.6.15');
-        const { WebrtcProvider } = await import('https://esm.sh/y-webrtc@10.3.0');
+        const { WebrtcProvider } = await import('https://esm.sh/y-webrtc@10.3.0?deps=yjs@13.6.15');
         
         ydoc = new Y.Doc();
+        const signalingServers = customSignalingUrl
+            ? [customSignalingUrl]
+            : ['wss://signaling.yjs.dev', 'wss://y-webrtc-signaling-eu.herokuapp.com'];
+
         yprovider = new WebrtcProvider(roomId, ydoc, {
-            signaling: ['wss://signaling.yjs.dev']
+            signaling: signalingServers
         });
         
         yNodesMap = ydoc.getMap('nodes');
@@ -4394,3 +4398,7 @@ function pointsToSVGPath(points) {
     }
     return d;
 }
+
+// Start application
+setupSettings();
+init();

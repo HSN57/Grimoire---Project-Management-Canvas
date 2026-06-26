@@ -435,7 +435,12 @@
         <div class="settings-content" style="flex-grow: 1;">
             <!-- Start Collaboration section -->
             <div id="collab-start-section" style="display: block;">
-                <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 20px; line-height: 1.4;">Start real-time collaboration with your friends! Click the button below to generate a shareable session.</p>
+                <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 16px; line-height: 1.4;">Start real-time collaboration with your friends! Click the button below to generate a shareable session.</p>
+                <div style="margin-bottom: 16px;">
+                    <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-text-muted); display: block; margin-bottom: 6px;">Signaling Server URL</label>
+                    <input type="text" id="collab-signaling-url" class="share-link-input" placeholder="wss://signaling.yjs.dev" style="width: 100%; box-sizing: border-box;">
+                    <p style="font-size: 11px; color: var(--color-text-muted); margin-top: 6px;">Leave default, or paste your own Railway server URL (e.g. wss://my-server.railway.app)</p>
+                </div>
                 <button id="collab-btn-start" class="outline-btn" style="width: 100%; margin-top: 0; background: var(--color-accent-blue); color: #000; font-weight: 500; border-color: var(--color-accent-blue);">Start Collaboration Session</button>
             </div>
             <!-- Active Collaboration section -->
